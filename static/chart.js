@@ -2,7 +2,7 @@
 
 (function () {
   const NS = 'http://www.w3.org/2000/svg';
-  const W = 600;
+  const W = 300;
 
   function el(tag, attrs) {
     const node = document.createElementNS(NS, tag);
@@ -23,7 +23,7 @@
     const h = Number(opts.height) || 120;
     const digits = Number.isInteger(opts.digits) ? opts.digits : 0;
     const unit = opts.unit == null ? '' : String(opts.unit);
-    const svg = el('svg', { class: 'chart', viewBox: '0 0 600 ' + h, width: '100%' });
+    const svg = el('svg', { class: 'chart', viewBox: '0 0 ' + W + ' ' + h, width: '100%' });
 
     if (!points.length) {
       const empty = el('text', {

@@ -925,7 +925,7 @@ async function renderProgress() {
     const pts = curvePoints(PG.line, x.k);
     charts.append(h('div', { class: 'chart-card' },
       h('div', { class: 'row' }, h('b', { class: 'grow', text: x.zh }), h('span', { class: 'hint', text: x.unit + ' · ' + (x.better === 'up' ? '越高越好' : '越低越好') })),
-      lineChart(pts.map(p => ({ ...p, y: +p.y.toFixed(x.digits) })), { unit: x.unit, better: x.better, digits: x.digits, height: 130 }),
+      lineChart(pts.map(p => ({ ...p, y: +p.y.toFixed(x.digits) })), { unit: x.unit, better: x.better, digits: x.digits, height: 150 }),
       h('p', { class: 'hint', text: x.tip })));
   }
   curve.append(charts);
