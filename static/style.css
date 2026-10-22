@@ -1,6 +1,6 @@
 /*
   每天开口 — "recording booth" direction.
-  Layout: fixed pine rail on the left (identity, streak, navigation) + one quiet working column.
+  Layout: fixed pine rail on the left (identity, habit reminder, navigation) + one quiet working column.
   The one loud element: the current line in the shadowing booth, lit by the amber on-air lamp.
 */
 :root {
@@ -56,10 +56,8 @@ a { color: inherit; }
 .rail { background: var(--rail); color: var(--rail-ink); padding: 28px 18px; display: flex; flex-direction: column; gap: 28px; position: sticky; top: 0; height: 100vh; }
 .brand h1 { font: 600 24px/1.1 var(--f-ui); letter-spacing: .02em; }
 .brand p { color: var(--rail-muted); font-size: 12px; margin-top: 6px; }
-.streak { display: grid; gap: 8px; }
-.streak .num { display: flex; align-items: baseline; gap: 6px; }
-.streak b { font: 600 40px/1 var(--f-text); font-variant-numeric: lining-nums; }
-.streak span { color: var(--rail-muted); font-size: 13px; }
+.habit { display: grid; gap: 8px; }
+.habit p { color: var(--rail-muted); font-size: 12px; }
 .week { display: flex; gap: 5px; }
 .week i { width: 18px; height: 6px; border-radius: 3px; background: rgba(255,255,255,.12); display: block; }
 .week i.on { background: var(--lamp); }
@@ -75,9 +73,10 @@ a { color: inherit; }
 main[data-view] { max-width: 820px; display: grid; gap: 22px; }
 
 @media (max-width: 860px) {
-  .app { grid-template-columns: 1fr; }
+  .app { grid-template-columns: minmax(0, 1fr); }
   .rail { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 16px 20px; gap: 16px; }
-  .nav { grid-auto-flow: column; overflow-x: auto; }
+  .nav { grid-auto-flow: column; overflow-x: auto; max-width: 100%; }
+  .nav a { white-space: nowrap; }
   .rail .foot, .brand p { display: none; }
 }
 
@@ -229,11 +228,43 @@ audio.native { width: 100%; height: 40px; }
 .saved-item .due { font-size: 12px; color: var(--muted); }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
 
-/* ---------- log ---------- */
-.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-.stat { padding: 4px 0; border-top: 2px solid var(--ink); }
-.stat b { display: block; font: 600 34px/1.2 var(--f-text); font-variant-numeric: lining-nums; }
-.stat span { font-size: 13px; color: var(--muted); }
+/* ---------- metrics, 4/3/2, progress ---------- */
+.metrics { display: grid; gap: 6px; }
+.metric-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.metric { border-top: 2px solid var(--ink); padding-top: 4px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; min-width: 0; cursor: help; }
+.metric b { font: 600 26px/1.2 var(--f-text); font-variant-numeric: tabular-nums lining-nums; }
+.metric small { font-size: 12px; font-variant-numeric: tabular-nums; }
+.metric small.up { color: var(--good); }
+.metric small.down { color: var(--warn); }
+.metric span { flex-basis: 100%; font-size: 12px; color: var(--muted); }
+.timer-inline { display: flex; align-items: center; gap: 12px; flex: 1 1 160px; }
+.timer-inline b { font: 500 24px/1 var(--f-text); font-variant-numeric: tabular-nums lining-nums; min-width: 3em; }
+.rounds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.round { display: grid; gap: 12px; align-content: start; padding: 16px; border-radius: var(--r-lg); border: 1px solid var(--line); background: transparent; }
+.round.cur { background: var(--surface); border-color: var(--ink); }
+.round.live { border-color: var(--lamp); box-shadow: 0 0 0 4px var(--lamp-soft); }
+.round .big-rec { justify-content: center; }
+.round .metric b { font-size: 20px; }
+.round audio, .ab-col audio, .rec-item audio { width: 100%; height: 36px; }
+.base-card { display: grid; gap: 14px; padding: 20px 22px; border-radius: var(--r-lg); background: var(--surface); border: 1px solid var(--line); }
+.base-card.due { border-color: var(--lamp); }
+.base-card h3 { font-size: 15px; font-weight: 600; }
+.base-card .prompt { font-size: 20px; }
+.ab { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.ab.one { grid-template-columns: minmax(0, 1fr); max-width: 420px; }
+.ab-col { display: grid; gap: 10px; align-content: start; }
+details summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+details[open] > summary { margin-bottom: 8px; }
+details > * + * { margin-top: 8px; }
+.charts { display: grid; gap: 12px; }
+.chart-card { display: grid; gap: 6px; padding: 14px 16px; border-radius: var(--r-lg); background: var(--surface); border: 1px solid var(--line); }
+.chart { display: block; width: 100%; height: auto; overflow: visible; }
+.chart-line { fill: none; stroke: var(--good); stroke-width: 2; }
+.chart-dot { fill: var(--surface); stroke: var(--good); stroke-width: 2; }
+.chart-dot.last { fill: var(--good); }
+.chart-text { fill: var(--muted); font-size: 12px; }
+.chart-text.strong { fill: var(--ink); font-weight: 600; font-size: 13px; }
+.rec-item { display: grid; gap: 4px; padding: 12px 0; border-top: 1px solid var(--line); }
 .heat-wrap { overflow-x: auto; }
 .heat { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 14px); gap: 3px; width: max-content; }
 .heat i { width: 14px; height: 14px; border-radius: 3px; background: var(--heat-0); display: block; }
@@ -254,7 +285,7 @@ audio.native { width: 100%; height: 40px; }
 .page-title { font: 600 30px/1.2 var(--f-text); }
 
 @media (max-width: 600px) {
-  .stepper { grid-template-columns: 1fr; }
+  .stepper, .rounds, .ab { grid-template-columns: 1fr; }
   .lesson-title { font-size: 28px; }
   .booth .line { font-size: 22px; }
   .phrase { font-size: 32px; }

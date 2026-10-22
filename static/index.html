@@ -16,27 +16,30 @@
       <h1>每天开口</h1>
       <p id="subline">加载中…</p>
     </div>
-    <div class="streak" aria-label="连续练习">
-      <div class="num"><b id="streakNum">0</b><span>天连续</span></div>
+    <div class="habit" aria-label="练习习惯">
       <div class="week" id="weekDots" aria-label="最近 7 天"></div>
+      <p id="habitLine"></p>
     </div>
     <nav class="nav" role="tablist">
       <a href="#today" data-tab="today">今天</a>
+      <a href="#retell" data-tab="retell">4/3/2 复述</a>
       <a href="#chunks" data-tab="chunks">语块本<span class="badge" id="dueBadge" hidden></span></a>
       <a href="#chat" data-tab="chat">AI 对话</a>
-      <a href="#log" data-tab="log">记录</a>
+      <a href="#progress" data-tab="progress">进步</a>
       <a href="#settings" data-tab="settings">设置</a>
     </nav>
     <p class="foot" id="railFoot"></p>
   </aside>
   <div class="main">
     <main data-view="today" id="view-today"></main>
+    <main data-view="retell" id="view-retell" hidden></main>
     <main data-view="chunks" id="view-chunks" hidden></main>
     <main data-view="chat" id="view-chat" hidden></main>
-    <main data-view="log" id="view-log" hidden></main>
+    <main data-view="progress" id="view-progress" hidden></main>
     <main data-view="settings" id="view-settings" hidden></main>
   </div>
 </div>
+<script src="chart.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

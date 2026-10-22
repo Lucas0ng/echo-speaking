@@ -30,6 +30,7 @@ const SVG = {
   left: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 6l-6 6 6 6"/></svg>',
   right: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 6l6 6-6 6"/></svg>',
 };
+const put = (el, ...kids) => el.append(...kids.filter(k => k != null && k !== false)); // Element.append would print "null"
 function ic(name) { const s = h('span', { class: 'ic', 'aria-hidden': 'true' }); s.innerHTML = SVG[name]; return s; }
 const z2 = n => String(n).padStart(2, '0');
 const ymd = d => d.getFullYear() + '-' + z2(d.getMonth() + 1) + '-' + z2(d.getDate());
@@ -55,10 +56,15 @@ async function aiAudio(blob, prompt) {
   const fd = new FormData(); fd.append('audio', blob, 'rec' + extOf(blob)); fd.append('prompt', prompt); fd.append('want_json', '1');
   return (await api('/api/ai/audio', { method: 'POST', body: fd })).json;
 }
-async function stt(blob, ref = '') {
+/* arch = { kind, line, meta } archives the recording on the server (audio + transcript + fluency metrics). */
+async function sttFull(blob, ref = '', arch = null) {
   const fd = new FormData(); fd.append('audio', blob, 'rec' + extOf(blob)); fd.append('ref', ref);
-  return (await api('/api/stt', { method: 'POST', body: fd })).text;
+  if (arch) { fd.append('kind', arch.kind); fd.append('line', arch.line || 'daily'); fd.append('meta', JSON.stringify(arch.meta || {})); }
+  const j = await api('/api/stt', { method: 'POST', body: fd });
+  if (arch) RECS.dirty = true;
+  return j;
 }
+async function stt(blob, ref = '', arch = null) { return (await sttFull(blob, ref, arch)).text; }
 const LEARNER = "The learner is a Chinese graduate student (master's level, roughly IELTS 5.5–6.5 speaking) practising spoken English. Explanations for the learner are in simplified Chinese; English examples are natural, spoken and modern.";
 
 /* ================= state ================= */
@@ -74,9 +80,9 @@ function markLesson(n, step) {
   if (!L[step]) { L[step] = true; if (L.sh && L.ph && L.sp && !L.at) L.at = today(); }
   markDay(step);
 }
-const active = d => { const v = S.days[d]; return !!(v && (v.sh || v.ph || v.sp || v.ch || v.rv)); };
-const level = d => { const v = S.days[d]; if (!v) return 0; return Math.min(3, ['sh', 'ph', 'sp', 'rv'].filter(k => v[k]).length + (v.ch ? 1 : 0)); };
-function streak() { let n = 0; const c = new Date(); if (!active(ymd(c))) c.setDate(c.getDate() - 1); while (active(ymd(c))) { n++; c.setDate(c.getDate() - 1); } return n; }
+const DAY_FLAGS = ['sh', 'ph', 'sp', 'rv', 'rt', 'bl'];
+const active = d => { const v = S.days[d]; return !!(v && (v.ch || DAY_FLAGS.some(k => v[k]))); };
+const level = d => { const v = S.days[d]; if (!v) return 0; return Math.min(3, DAY_FLAGS.filter(k => v[k]).length + (v.ch ? 1 : 0)); };
 const lessonsDone = () => Object.values(S.lessons).filter(l => l.sh && l.ph && l.sp).length;
 
 /* ================= text to speech ================= */
@@ -190,6 +196,65 @@ const Rec = {
   isOn(owner) { return !!this.mr && (owner == null || this.owner === owner); },
 };
 
+/* ================= recordings archive & fluency metrics ================= */
+const RECS = { list: [], dirty: true, ok: false };
+async function loadRecs() {
+  if (!RECS.dirty) return RECS.list;
+  try { RECS.list = (await api('/api/recordings')).recordings; RECS.dirty = false; RECS.ok = true; } catch {}
+  return RECS.list;
+}
+const recAudio = id => '/api/recordings/' + encodeURIComponent(id) + '/audio';
+const KIND_ZH = { talk: '开口说', baseline: '基准录音', r432: '4/3/2 复述', chat: 'AI 对话', shadow: '跟读', chunk: '语块造句', review: '复习' };
+const CURVE_KINDS = ['talk', 'baseline', 'r432'];
+const METRICS = [
+  { k: 'wpm', zh: '语速', unit: '词/分', better: 'up', digits: 0, tip: '每分钟说出的词数（不算 um、uh），中间的停顿也算进时间。' },
+  { k: 'fillers_per100', zh: '填充词', unit: '个/百词', better: 'down', digits: 1, tip: '每 100 个词里有几个 um、uh、er。' },
+  { k: 'mlr', zh: '连贯段', unit: '词', better: 'up', digits: 1, tip: '平均连着说几个词才停一下（停顿 ≥ 0.25 秒或说 um 都算停）。' },
+];
+// Curves use free monologues only; rounds 2–3 of a 4/3/2 set repeat round 1, so they would inflate the trend.
+const inCurve = r => r.metrics?.reliable && CURVE_KINDS.includes(r.kind) && !(r.kind === 'r432' && r.meta?.round !== 1);
+function metricsView(m, base) {
+  if (!m) return null;
+  return h('div', { class: 'metrics' },
+    h('div', { class: 'metric-row' }, METRICS.map(x => {
+      const v = m[x.k] || 0, d = base ? v - (base[x.k] || 0) : 0, shown = Math.abs(d) >= 0.5 * 10 ** -x.digits;
+      const good = x.better === 'up' ? d > 0 : d < 0;
+      return h('div', { class: 'metric', title: x.tip }, h('b', { text: v.toFixed(x.digits) }),
+        base && shown ? h('small', { class: good ? 'up' : 'down', text: (d > 0 ? '+' : '−') + Math.abs(d).toFixed(x.digits) }) : null,
+        h('span', { text: x.zh + ' · ' + x.unit }));
+    })),
+    m.reliable ? null : h('p', { class: 'hint', text: '这段不到 20 个词，指标波动大，不进曲线。' }));
+}
+/* one countdown at a time; stops the recording when the limit is reached */
+const TMR = { owner: null, elapsed: 0, limit: 0 };
+async function timedRec(owner, limit, rerender) {
+  if (Rec.isOn(owner)) { Rec.stop(); return null; }
+  try { await Rec.start(owner); } catch (e) { alertBox(e.message); return null; }
+  Object.assign(TMR, { owner, elapsed: 0, limit });
+  const iv = setInterval(() => { TMR.elapsed++; paintTimer(); if (TMR.elapsed >= limit) Rec.stop(); }, 1000);
+  rerender();
+  const blob = await Rec.done; clearInterval(iv); if (TMR.owner === owner) TMR.owner = null;
+  return blob.size < 800 ? null : blob;
+}
+function timerView(owner, limit) {
+  const on = TMR.owner === owner;
+  return h('div', { class: 'timer-inline' + (on ? ' on' : '') }, h('b', { class: 'tmr-num', text: fmt(on ? Math.max(0, limit - TMR.elapsed) : limit) }),
+    h('div', { class: 'bar' }, h('i', { class: 'tmr-bar', style: 'width:' + (on ? Math.min(100, TMR.elapsed / limit * 100) : 0) + '%' })));
+}
+function paintTimer() {
+  $$('.timer-inline.on .tmr-num').forEach(e => { e.textContent = fmt(Math.max(0, TMR.limit - TMR.elapsed)); });
+  $$('.timer-inline.on .tmr-bar').forEach(e => { e.style.width = Math.min(100, TMR.elapsed / TMR.limit * 100) + '%'; });
+}
+const recDot = () => h('span', { class: 'rec-dot', style: 'background:#fff' });
+/* Fixed benchmark tasks. Never edit the wording or length: month-to-month comparison only works on the identical task. */
+const BASELINES = [
+  { id: 'intro', line: 'daily', title: '日常线 · 自我介绍', en: 'Introduce yourself: who you are, what you study, and what a normal day looks like for you.', secs: 60 },
+  { id: 'research', line: 'academic', title: '学术线 · 讲你的研究', en: 'Explain your research to a smart friend from another field: the problem, how you study it, and what you have found so far.', secs: 60 },
+];
+const BASE_EVERY = 28; // days between benchmark recordings
+const baseRecs = b => RECS.list.filter(r => r.kind === 'baseline' && r.meta?.bid === b.id).sort((x, y) => x.t - y.t);
+function baseDue(b) { const rs = baseRecs(b); return !rs.length || Date.now() - rs[rs.length - 1].t >= BASE_EVERY * 864e5; }
+
 /* ================= word matching ================= */
 const nt = t => t.toLowerCase().replace(/[’‘]/g, "'").replace(/[^a-z0-9']/g, '');
 function align(refText, heardText) {
@@ -245,7 +310,7 @@ class Shadow {
   async check(i) {
     const r = this.recs.get(i); if (!r) return;
     this.busy.add('chk' + i); this.rerender();
-    try { const heard = await stt(r.blob, this.sents[i].text); this.res.set(i, { heard, score: align(this.sents[i].text, heard).score }); }
+    try { const heard = await stt(r.blob, this.sents[i].text, { kind: 'shadow', meta: { src: this.label, ref: this.sents[i].text } }); this.res.set(i, { heard, score: align(this.sents[i].text, heard).score }); }
     catch (e) { this.res.set(i, { error: e.message }); }
     this.busy.delete('chk' + i); this.rerender();
   }
@@ -341,20 +406,21 @@ function pollLater(path) {
 
 /* ================= header & tabs ================= */
 function renderHeader() {
-  $('#streakNum').textContent = streak();
-  const wk = $('#weekDots'); wk.replaceChildren();
-  for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); const k = ymd(d); wk.append(h('i', { class: (active(k) ? 'on' : '') + (i === 0 ? ' today' : ''), title: k })); }
+  const wk = $('#weekDots'); wk.replaceChildren(); let n7 = 0;
+  for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); const k = ymd(d); n7 += active(k); wk.append(h('i', { class: (active(k) ? 'on' : '') + (i === 0 ? ' today' : ''), title: k })); }
+  $('#habitLine').textContent = (active(today()) ? '今天开过口了' : '今天还没开口') + ' · 近 7 天练了 ' + n7 + ' 天';
   $('#subline').textContent = '已完成 ' + lessonsDone() + ' / ' + N + ' 课';
   if (STATUS.lessons) $('#railFoot').textContent = STATUS.ielts_transcribed >= STATUS.lessons ? '全部字幕已就绪' : '本地字幕 ' + STATUS.ielts_transcribed + ' / ' + STATUS.lessons + ' 集，空闲时在后台生成';
 }
 let TAB = 'today';
 function setTab(t) {
-  if (!['today', 'chunks', 'chat', 'log', 'settings'].includes(t)) t = 'today';
+  if (t === 'log') t = 'progress';
+  if (!['today', 'retell', 'chunks', 'chat', 'progress', 'settings'].includes(t)) t = 'today';
   if (TAB !== t) stopEverything();
   TAB = t;
   $$('.nav a').forEach(a => a.setAttribute('aria-selected', String(a.dataset.tab === t)));
   $$('main[data-view]').forEach(m => { m.hidden = m.dataset.view !== t; });
-  ({ today: renderToday, chunks: renderChunks, chat: renderChat, log: renderLog, settings: renderSettings })[t]();
+  ({ today: renderToday, retell: renderRetell, chunks: renderChunks, chat: renderChat, progress: renderProgress, settings: renderSettings })[t]();
   if (location.hash !== '#' + t) history.replaceState(null, '', '#' + t);
 }
 $$('.nav a').forEach(a => a.addEventListener('click', e => { e.preventDefault(); setTab(a.dataset.tab); }));
@@ -395,6 +461,9 @@ async function renderToday() {
   const n = S.prefs.cur, L = LESSONS[n - 1], rec = lessonRec(n), st = lp(n);
   if (!st.step) st.step = !rec.sh ? 1 : !rec.ph ? 2 : !rec.sp ? 3 : 1;
   const frag = [];
+  const due = RECS.ok ? BASELINES.filter(baseDue) : [];
+  if (due.length) frag.push(h('div', { class: 'notice row' }, h('span', { class: 'grow', text: '本月的基准录音还没录：' + due.map(b => b.title).join('、') + '，每条 1 分钟。以后每个月拿它和第 1 次对比。' }),
+    h('button', { class: 'btn', onclick: () => setTab('progress') }, '去录')));
 
   const sel = h('select', { 'aria-label': '选择课程', onchange: e => goLesson(+e.target.value) },
     LESSONS.map((x, i) => { const r = S.lessons[i + 1]; return h('option', { value: i + 1, selected: i + 1 === n }, (r && r.sh && r.ph && r.sp ? '✓ ' : '') + (i + 1) + '. ' + x.t); }));
@@ -438,7 +507,7 @@ async function buildStep1(panel, n, L, rec) {
   if (tr.sentences) {
     let sh = SHADOWS.get(L.f);
     if (!sh) { sh = new Shadow(L.f, tr.sentences, { label: 'IELTSCast：' + L.t, onCount: c => { if (c >= 5 && !lessonRec(n).sh) markLesson(n, 'sh'); } }); SHADOWS.set(L.f, sh); }
-    panel.append(
+    put(panel,
       h('p', { class: 'intro', text: (L.w ? '这一集原音频带停顿。' : '') + '选一句，先听原声，再跟读。录完自动用本地 Whisper 比对，跟读满 5 句这一步就完成。' }),
       sh.view(),
       h('div', { class: 'script-bar' },
@@ -483,7 +552,7 @@ async function buildStep2(panel, n, L, rec, st) {
         save(); st.busy.card = false; renderToday();
       } catch (e) { st.busy.card = false; b.disabled = false; out.replaceChildren(h('p', { class: 'err', text: e.message })); }
     } }, '生成讲解和例句');
-    cardBox.append(h('div', { class: 'row' }, b, h('span', { class: 'hint', text: '生成后这个语块会进语块本，按遗忘曲线安排复习。' })), out, needKeyNote('text'));
+    put(cardBox, h('div', { class: 'row' }, b, h('span', { class: 'hint', text: '生成后这个语块会进语块本，按遗忘曲线安排复习。' })), out, needKeyNote('text'));
   }
   panel.append(cardBox);
   const ta = h('textarea', { placeholder: '用「' + L.x + '」说一句和你自己有关的话。点「说」录音，会自动转成文字。', style: 'min-height:72px' });
@@ -502,7 +571,7 @@ async function buildStep2(panel, n, L, rec, st) {
     h('div', { class: 'row' }, h('span', { class: 'tag ' + (st.check.ok ? 'good' : 'lamp'), text: st.check.ok ? '用对了' : '可以更好' }), h('span', { text: st.check.note })),
     st.check.better ? h('div', { class: 'say' }, h('p', { text: st.check.better }), sayBtn(st.check.better), chunkBtn(st.check.better, '', '造句：' + L.x)) : null));
   panel.append(h('h3', { class: 'sub-h', text: '轮到你' }), ta, h('div', { class: 'row' },
-    micButton('ph' + n, async blob => { try { const t = await stt(blob, L.x); st.sentence = (st.sentence ? st.sentence + ' ' : '') + t; } catch (e) { alertBox(e.message); } renderToday(); }),
+    micButton('ph' + n, async blob => { try { const t = await stt(blob, L.x, { kind: 'chunk', meta: { lesson: n, ref: L.x } }); st.sentence = (st.sentence ? st.sentence + ' ' : '') + t; } catch (e) { alertBox(e.message); } renderToday(); }),
     cb), chk, nextStepButton(n, 2, rec, 'ph', '跳过检查，标记完成'));
 }
 function buildStep3(panel, n, L, rec, st) {
@@ -518,7 +587,8 @@ function buildStep3(panel, n, L, rec, st) {
     st.blob && !recOn ? h('button', { class: 'btn', onclick: () => playBlobUrl(st.url) }, ic('play'), '回放') : null));
   const ta2 = h('textarea', { placeholder: '说完会自动转成文字。识别错的地方可以手动改。' });
   ta2.value = st.talk; ta2.oninput = () => { st.talk = ta2.value; };
-  panel.append(st.busy.stt ? h('p', { class: 'thinking', text: '本地转写中' }) : null, ta2);
+  put(panel, st.busy.stt ? h('p', { class: 'thinking', text: '本地转写中' }) : null,
+    st.metrics ? h('div', { class: 'card' }, h('h3', { class: 'sub-h', text: '这一段的指标（已存进「进步」页）' }), metricsView(st.metrics)) : null, ta2);
   const rb = h('button', { class: 'btn primary', disabled: !!st.busy.review, onclick: async () => {
     const s = ta2.value.trim(); if (s.split(/\s+/).length < 8) { alertBox('再多说几句（至少 8 个词）再点评。'); return; }
     st.busy.review = true; renderToday();
@@ -536,7 +606,7 @@ function buildStep3(panel, n, L, rec, st) {
     } catch (e) { alertBox(e.message); }
     st.busy.audio = false; renderToday();
   } }, st.busy.audio ? 'AI 在听' : '听发音和流利度');
-  panel.append(h('div', { class: 'row' }, rb, ab), needKeyNote('text'));
+  put(panel, h('div', { class: 'row' }, rb, ab), needKeyNote('text'));
   if (st.audioReview) panel.append(renderAudioReview(st.audioReview));
   if (st.review) panel.append(renderReview(st.review, L));
   panel.append(nextStepButton(n, 3, rec, 'sp', '只说不点评，标记完成'));
@@ -552,8 +622,11 @@ async function speakRec(n, dur) {
   const blob = await Rec.done; clearInterval(SPT.iv);
   if (blob.size < 800) { renderToday(); return; }
   if (st.url) URL.revokeObjectURL(st.url);
-  st.blob = blob; st.url = URL.createObjectURL(blob); st.review = null; st.audioReview = null; st.busy.stt = true; renderToday();
-  try { st.talk = await stt(blob); } catch (e) { alertBox(e.message); }
+  st.blob = blob; st.url = URL.createObjectURL(blob); st.review = null; st.audioReview = null; st.metrics = null; st.busy.stt = true; renderToday();
+  try {
+    const L = LESSONS[n - 1], j = await sttFull(blob, '', { kind: 'talk', meta: { lesson: n, topic: L.t, prompt: promptText(L) } });
+    st.talk = j.text; st.metrics = j.metrics;
+  } catch (e) { alertBox(e.message); }
   st.busy.stt = false; renderToday();
 }
 function renderCard(box, c, L) {
@@ -601,7 +674,7 @@ function renderChunks() {
       if (!RV.shown) {
         card.append(h('p', { class: 'hint', text: '先开口说出英文，再看答案。说出来比在心里想更能记住。' }),
           h('div', { class: 'row' },
-            micButton('rev', async blob => { RV.busy = true; renderChunks(); try { RV.heard = await stt(blob, v.en); } catch (e) { alertBox(e.message); } RV.busy = false; RV.shown = true; renderChunks(); say(v.en); }, ['说出来', '说完了']),
+            micButton('rev', async blob => { RV.busy = true; renderChunks(); try { RV.heard = await stt(blob, v.en, { kind: 'review', meta: { ref: v.en } }); } catch (e) { alertBox(e.message); } RV.busy = false; RV.shown = true; renderChunks(); say(v.en); }, ['说出来', '说完了']),
             h('button', { class: 'btn', onclick: () => { RV.shown = true; renderChunks(); say(v.en); } }, '直接看答案')));
         if (RV.busy) card.append(h('p', { class: 'thinking', text: '识别中…' }));
       } else {
@@ -635,8 +708,8 @@ function renderChunks() {
 /* ================= CHAT ================= */
 const SCEN = {
   topic: { label: '今日话题', role: n => 'You are a friendly IELTS speaking partner. Talk with the learner about "' + LESSONS[n - 1].t + '" in the style of IELTS Part ' + LESSONS[n - 1].p + ' and Part 3 follow-ups. Ask one question at a time. Give the learner chances to use the chunk "' + LESSONS[n - 1].x + '".' },
-  research: { label: '介绍研究', role: () => 'You are a friendly professor from another university meeting the learner at a poster session at an international conference. Ask about their research topic, why it matters, their method, results so far, and next steps.' },
-  meeting: { label: '组会汇报', role: () => "You are the learner's supervisor in a weekly lab meeting held in English. Ask them to report this week's progress, then ask kind but probing follow-up questions." },
+  research: { label: '介绍研究', line: 'academic', role: () => 'You are a friendly professor from another university meeting the learner at a poster session at an international conference. Ask about their research topic, why it matters, their method, results so far, and next steps.' },
+  meeting: { label: '组会汇报', line: 'academic', role: () => "You are the learner's supervisor in a weekly lab meeting held in English. Ask them to report this week's progress, then ask kind but probing follow-up questions." },
   interview: { label: '英文面试', role: () => 'You are an interviewer for a research internship or a graduate job. Ask common interview questions one at a time.' },
   coffee: { label: '会议茶歇', role: () => 'You are a PhD student from another country chatting with the learner during a coffee break at a conference. Keep it light.' },
   free: { label: '自由聊天', role: () => 'You are a friendly English-speaking friend. Chat about daily life, food, hobbies and plans.' },
@@ -711,7 +784,7 @@ function renderChat() {
     ta.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendChat(ta.value); } });
     const mineCount = CHAT.view.filter(v => v.role === 'me').length;
     frag.push(h('div', { class: 'composer' }, ta, h('div', { class: 'row' },
-      micButton('chat', async blob => { CHAT.sttBusy = true; renderChat(); try { const t = await stt(blob); CHAT.draft = (CHAT.draft ? CHAT.draft + ' ' : '') + t; } catch (e) { alertBox(e.message); } CHAT.sttBusy = false; renderChat(); }),
+      micButton('chat', async blob => { CHAT.sttBusy = true; renderChat(); try { const t = await stt(blob, '', { kind: 'chat', line: SCEN[CHAT.scen].line || 'daily', meta: { scen: CHAT.scen } }); CHAT.draft = (CHAT.draft ? CHAT.draft + ' ' : '') + t; } catch (e) { alertBox(e.message); } CHAT.sttBusy = false; renderChat(); }),
       CHAT.sttBusy ? h('span', { class: 'thinking', text: '转写中…' }) : null,
       h('button', { class: 'btn primary', disabled: CHAT.busy, onclick: () => sendChat(ta.value) }, ic('send'), '发送'),
       h('span', { class: 'grow' }),
@@ -721,22 +794,166 @@ function renderChat() {
   window.scrollTo(0, document.body.scrollHeight);
 }
 
-/* ================= LOG ================= */
-function renderLog() {
-  const root = $('#view-log'); if (root.hidden) return;
-  const total = Object.keys(S.days).filter(active).length;
-  const frag = [h('h2', { class: 'page-title', text: '记录' }), h('div', { class: 'stats' },
-    h('div', { class: 'stat' }, h('b', { text: streak() }), h('span', { text: '连续天数' })),
-    h('div', { class: 'stat' }, h('b', { text: total }), h('span', { text: '累计练习天数' })),
-    h('div', { class: 'stat' }, h('b', { text: lessonsDone() + '/' + N }), h('span', { text: '完成课程' })))];
+/* ================= 4/3/2 RETELL ================= */
+const PLANS = { full: [240, 180, 120], short: [120, 90, 60] };
+const RT = { topic: '', line: 'daily', plan: 'full', set: null, rounds: [] };
+async function recordRound(i) {
+  if (Rec.isOn('rt')) { Rec.stop(); return; }
+  if (!RT.topic.trim()) { alertBox('先写下要讲的内容。'); return; }
+  if (i === 0) RT.set = 's' + Date.now().toString(36);
+  const lim = PLANS[RT.plan][i];
+  const blob = await timedRec('rt', lim, renderRetell);
+  if (!blob) { renderRetell(); return; }
+  const r = { pending: true, url: URL.createObjectURL(blob) }; RT.rounds[i] = r; markDay('rt'); renderRetell();
+  try {
+    const j = await sttFull(blob, '', { kind: 'r432', line: RT.line, meta: { set: RT.set, round: i + 1, limit: lim, topic: RT.topic.trim().slice(0, 300) } });
+    Object.assign(r, { id: j.id, metrics: j.metrics, text: j.text });
+  } catch (e) { r.error = e.message; }
+  r.pending = false; renderRetell();
+}
+function resetRetell() { if (Rec.isOn('rt')) Rec.stop(); RT.rounds.forEach(r => r?.url && URL.revokeObjectURL(r.url)); RT.rounds = []; RT.set = null; }
+function renderRetell() {
+  const root = $('#view-retell'); if (root.hidden) return;
+  if (!RT.topic && N) RT.topic = promptText(LESSONS[S.prefs.cur - 1]);
+  const limits = PLANS[RT.plan], k = RT.rounds.length, recOn = Rec.isOn('rt'), started = k > 0 || recOn;
+  const frag = [h('h2', { class: 'page-title', text: '4/3/2 复述' }),
+    h('p', { class: 'intro', text: '同一段内容连讲三遍，时间一遍比一遍短，到时间自动停。不用背稿，每遍把同样的意思讲完就行。第 2、3 遍是在重复第 1 遍，所以只有第 1 遍进「进步」页的曲线。' })];
+  const ta = h('textarea', { style: 'min-height:64px', disabled: started, placeholder: '要讲的话题或内容' }); ta.value = RT.topic; ta.oninput = () => { RT.topic = ta.value; };
+  frag.push(h('div', { class: 'card' }, h('h3', { class: 'sub-h', text: '讲什么' }), ta,
+    started ? null : h('div', { class: 'row' },
+      h('button', { class: 'btn ghost', onclick: () => { RT.topic = promptText(LESSONS[S.prefs.cur - 1]); RT.line = 'daily'; renderRetell(); } }, '用今天的话题'),
+      h('button', { class: 'btn ghost', onclick: () => { RT.topic = BASELINES[1].en; RT.line = 'academic'; renderRetell(); } }, '讲我的研究'),
+      h('span', { class: 'grow' }),
+      seg(['daily', 'academic'], RT.line, v => { RT.line = v; }, v => (v === 'daily' ? '日常线' : '学术线')),
+      seg(['full', 'short'], RT.plan, v => { RT.plan = v; renderRetell(); }, v => (v === 'full' ? '4/3/2 分钟' : '2/1.5/1 分钟')))));
+  frag.push(h('div', { class: 'rounds' }, limits.map((lim, i) => {
+    const r = RT.rounds[i], cur = i === k, on = recOn && cur;
+    return h('div', { class: 'round' + (cur ? ' cur' : '') + (on ? ' live' : '') },
+      h('div', { class: 'row' }, h('b', { class: 'grow', text: '第 ' + (i + 1) + ' 遍' }), h('span', { class: 'hint', text: '限时 ' + fmt(lim) })),
+      cur ? timerView('rt', lim) : null,
+      cur ? h('button', { class: 'big-rec' + (on ? ' on' : ''), onclick: () => recordRound(i) }, on ? [recDot(), '说完了'] : [ic('mic'), i ? '开始第 ' + (i + 1) + ' 遍' : '开始']) : null,
+      r?.pending ? h('p', { class: 'thinking', text: '本地转写、计算指标中' }) : null,
+      r?.error ? h('p', { class: 'err', text: r.error }) : null,
+      r?.metrics ? metricsView(r.metrics, i && RT.rounds[0]?.metrics) : null,
+      r ? h('audio', { controls: true, preload: 'none', src: r.id ? recAudio(r.id) : r.url }) : null,
+      !r && !cur ? h('p', { class: 'hint', text: '等上一遍说完' }) : null);
+  })));
+  if (k === 3 && RT.rounds.every(r => r.metrics)) {
+    const a = RT.rounds[0].metrics, c = RT.rounds[2].metrics;
+    frag.push(h('div', { class: 'next-cta' }, h('span', { text: '第 1 遍 → 第 3 遍：语速 ' + Math.round(a.wpm) + ' → ' + Math.round(c.wpm) + ' 词/分，连贯段 ' + a.mlr + ' → ' + c.mlr + ' 词，填充词 ' + a.fillers_per100 + ' → ' + c.fillers_per100 + ' 个/百词。' }),
+      h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => { resetRetell(); renderRetell(); } }, '同一内容再来一组'), h('button', { class: 'btn ghost', onclick: () => { resetRetell(); RT.topic = ''; renderRetell(); } }, '换个内容'))));
+  } else if (started && !recOn) frag.push(h('div', { class: 'row' }, h('button', { class: 'btn ghost', onclick: () => { resetRetell(); renderRetell(); } }, '放弃这一组，重新开始')));
+  const hist = h('div', { class: 'section' });
+  frag.push(hist);
+  root.replaceChildren(...frag);
+  loadRecs().then(() => {
+    const sets = {};
+    for (const r of RECS.list) if (r.kind === 'r432' && r.meta?.set) (sets[r.meta.set] ||= []).push(r);
+    const rows = Object.values(sets).map(rs => rs.sort((x, y) => (x.meta.round || 0) - (y.meta.round || 0))).sort((x, y) => y[0].t - x[0].t).slice(0, 12);
+    if (!rows.length) return;
+    hist.replaceChildren(h('h2', { text: '以前的 4/3/2' }), h('div', { class: 'saved' }, rows.map(rs => h('div', { class: 'saved-item' },
+      h('span', { class: 'en', text: rs[0].meta.topic || '' }),
+      h('span', { class: 'zh', text: rs[0].date + ' · ' + (rs[0].line === 'academic' ? '学术线' : '日常线') + ' · 语速 ' + rs.map(r => Math.round(r.metrics?.wpm || 0)).join(' → ') + ' 词/分' })))));
+  });
+}
+
+/* ================= PROGRESS ================= */
+const PG = { line: 'daily', all: false, show: 20 };
+const BL = {};
+function curvePoints(line, key) {
+  const by = {};
+  for (const r of RECS.list) if (r.line === line && inCurve(r)) (by[r.date] ||= []).push(r.metrics[key]);
+  return Object.keys(by).sort().map(d => {
+    const v = by[d].sort((a, b) => a - b), n = v.length;
+    return { x: d, y: n % 2 ? v[(n - 1) / 2] : (v[n / 2 - 1] + v[n / 2]) / 2, label: n + ' 段录音的中位数' };
+  });
+}
+async function recordBaseline(b) {
+  const st = BL[b.id];
+  const blob = await timedRec('bl-' + b.id, b.secs, renderProgress);
+  if (!blob) { renderProgress(); return; }
+  st.busy = true; renderProgress();
+  try {
+    const j = await sttFull(blob, '', { kind: 'baseline', line: b.line, meta: { bid: b.id, prompt: b.en } });
+    markDay('bl'); await loadRecs(); st.pick = j.id;
+  } catch (e) { alertBox(e.message); }
+  st.busy = false; renderProgress();
+}
+function recCol(r, label, base) {
+  return h('div', { class: 'ab-col' },
+    h('div', { class: 'row' }, h('b', { class: 'grow', text: label }), h('span', { class: 'hint', text: r.date })),
+    h('audio', { controls: true, preload: 'none', src: recAudio(r.id) }),
+    metricsView(r.metrics, base),
+    h('details', {}, h('summary', { text: '看转写' }), h('p', { class: 'small', text: r.text || '（没识别出文字）' })));
+}
+function baselineCard(b) {
+  const rs = baseRecs(b), st = BL[b.id] || (BL[b.id] = { busy: false, pick: null }), owner = 'bl-' + b.id, on = Rec.isOn(owner), due = baseDue(b);
+  const first = rs[0], other = rs.find(r => r.id === st.pick && r !== first) || (rs.length > 1 ? rs[rs.length - 1] : null);
+  const box = h('div', { class: 'base-card' + (due ? ' due' : '') },
+    h('div', { class: 'row' }, h('h3', { class: 'grow', text: b.title }),
+      h('span', { class: 'tag' + (due ? ' lamp' : ' good'), text: !rs.length ? '还没录过' : due ? '这个月该录了' : '下次 ' + ymd(new Date(rs[rs.length - 1].t + BASE_EVERY * 864e5)) })),
+    h('div', { class: 'row' }, h('p', { class: 'prompt grow', text: b.en }), sayBtn(b.en, '朗读题目')),
+    h('div', { class: 'timer' },
+      h('button', { class: 'big-rec' + (on ? ' on' : ''), disabled: st.busy, onclick: () => recordBaseline(b) }, on ? [recDot(), '说完了'] : [ic('mic'), '录第 ' + (rs.length + 1) + ' 次']),
+      timerView(owner, b.secs)),
+    st.busy ? h('p', { class: 'thinking', text: '本地转写、计算指标中' }) : null);
+  if (!first) box.append(h('p', { class: 'hint', text: '题目和时长永远不变，每月录一次，到 1 分钟自动停。第一次录的就是你的起点。' }));
+  else if (!other) box.append(h('div', { class: 'ab one' }, recCol(first, '第 1 次', null)), h('p', { class: 'hint', text: '下个月再录一次，这里会把第 1 次和最新一次并排放，直接听出差别。' }));
+  else {
+    box.append(h('div', { class: 'ab' }, recCol(first, '第 1 次', null), recCol(other, '第 ' + (rs.indexOf(other) + 1) + ' 次', first.metrics)));
+    if (rs.length > 2) box.append(h('label', { class: 'row small muted' }, '右边换成', h('select', { onchange: e => { st.pick = e.target.value; renderProgress(); } },
+      rs.slice(1).map((r, i) => h('option', { value: r.id, selected: r === other }, '第 ' + (i + 2) + ' 次 · ' + r.date)))));
+    box.append(h('p', { class: 'hint', text: '同一道题录得越多越熟，变化里有一部分来自熟悉题目；隔一个月录一次能减小这个影响。' }));
+  }
+  return box;
+}
+const recTopic = r => r.meta?.prompt || r.meta?.topic || r.meta?.ref || r.meta?.src || '';
+async function renderProgress() {
+  const root = $('#view-progress'); if (root.hidden) return;
+  await loadRecs();
+  if (root.hidden) return;
+  const frag = [h('h2', { class: 'page-title', text: '进步' }),
+    h('p', { class: 'intro', text: '这里只放你的录音和从录音里算出来的数字，不打分、不算等级。指标由本机 Whisper 的逐词时间戳算出，单次会有波动，看趋势。' })];
+  frag.push(h('div', { class: 'section' }, h('h2', { text: '基准录音：第 1 次 vs 现在' }), BASELINES.map(baselineCard)));
+
+  const curve = h('div', { class: 'section' }, h('div', { class: 'row' }, h('h2', { class: 'grow', text: '流利度曲线' }),
+    seg(['daily', 'academic'], PG.line, v => { PG.line = v; renderProgress(); }, v => (v === 'daily' ? '日常线' : '学术线'))));
+  const nIn = RECS.list.filter(r => r.line === PG.line && inCurve(r)).length;
+  curve.append(h('p', { class: 'hint', text: '每个点是当天自由说话录音（开口说、基准录音、4/3/2 第 1 遍，每段 ≥ 20 词）的中位数。这条线上共有 ' + nIn + ' 段。' }));
+  const charts = h('div', { class: 'charts' });
+  for (const x of METRICS) {
+    const pts = curvePoints(PG.line, x.k);
+    charts.append(h('div', { class: 'chart-card' },
+      h('div', { class: 'row' }, h('b', { class: 'grow', text: x.zh }), h('span', { class: 'hint', text: x.unit + ' · ' + (x.better === 'up' ? '越高越好' : '越低越好') })),
+      lineChart(pts.map(p => ({ ...p, y: +p.y.toFixed(x.digits) })), { unit: x.unit, better: x.better, digits: x.digits, height: 130 }),
+      h('p', { class: 'hint', text: x.tip })));
+  }
+  curve.append(charts);
+  if (curvePoints(PG.line, 'wpm').length < 2) curve.append(h('p', { class: 'hint', text: '至少要两天的录音才看得出趋势。研究里语速通常 1–3 周就能测出变化。' }));
+  frag.push(curve);
+
+  const all = RECS.list.filter(r => PG.all || CURVE_KINDS.includes(r.kind) || r.kind === 'chat');
+  const list = h('div', { class: 'saved' }, all.slice(0, PG.show).map(r => {
+    const d = new Date(r.t), m = r.metrics;
+    return h('div', { class: 'rec-item' },
+      h('div', { class: 'row' }, h('b', { text: KIND_ZH[r.kind] || r.kind }), h('span', { class: 'tag', text: r.line === 'academic' ? '学术线' : '日常线' }),
+        h('span', { class: 'hint grow', text: r.date + ' ' + z2(d.getHours()) + ':' + z2(d.getMinutes()) + ' · ' + Math.round(r.duration) + ' 秒' + (m?.reliable ? ' · ' + Math.round(m.wpm) + ' 词/分' : '') })),
+      recTopic(r) ? h('p', { class: 'small muted', text: recTopic(r) }) : null,
+      h('details', {}, h('summary', { text: '听 / 看转写' }), h('audio', { controls: true, preload: 'none', src: recAudio(r.id) }), h('p', { class: 'small', text: r.text || '（没识别出文字）' }), metricsView(m)));
+  }));
+  if (!all.length) list.append(h('p', { class: 'hint', text: '还没有录音。今天课里的「开口说」、4/3/2、基准录音和 AI 对话，录完都会自动存在这里。' }));
+  frag.push(h('div', { class: 'section' }, h('div', { class: 'row' }, h('h2', { class: 'grow', text: '录音存档 · ' + all.length }),
+    h('label', { class: 'row small muted' }, h('input', { type: 'checkbox', checked: PG.all, onchange: e => { PG.all = e.target.checked; PG.show = 20; renderProgress(); } }), '也显示跟读、造句、复习的短录音')),
+    list, all.length > PG.show ? h('button', { class: 'btn ghost', onclick: () => { PG.show += 40; renderProgress(); } }, '再显示 40 条') : null));
+
   const weeks = 20, end = new Date(), start = new Date(); start.setDate(end.getDate() - ((end.getDay() + 6) % 7) - (weeks - 1) * 7);
   const heat = h('div', { class: 'heat', role: 'img', 'aria-label': '最近 ' + weeks + ' 周' });
-  for (let i = 0; i < weeks * 7; i++) { const d = new Date(start); d.setDate(start.getDate() + i); const k = ymd(d); const fut = d > end; heat.append(h('i', { class: fut ? 'future' : 'l' + level(k), title: k })); }
-  frag.push(h('div', { class: 'section' }, h('h2', { text: '练习日历' }), h('div', { class: 'heat-wrap' }, heat),
-    h('div', { class: 'legend' }, '少', ...[0, 1, 2, 3].map(l => h('i', { style: 'background:var(--heat-' + l + ')' })), '多', h('span', { style: 'margin-left:10px', text: '跟读、语块、开口、对话、复习，每天做任意一项就算打卡。' }))));
+  for (let i = 0; i < weeks * 7; i++) { const d = new Date(start); d.setDate(start.getDate() + i); const k = ymd(d); heat.append(h('i', { class: d > end ? 'future' : 'l' + level(k), title: k })); }
   const srsN = Object.keys(S.srs).length, mature = Object.values(S.srs).filter(v => v.ivl >= 21).length;
-  frag.push(h('div', { class: 'section' }, h('h2', { text: '语块本' }), h('p', { class: 'hint', text: '一共 ' + srsN + ' 条，其中 ' + mature + ' 条已经记牢（复习间隔超过 3 周）。' })));
-  root.replaceChildren(...frag);
+  frag.push(h('div', { class: 'section' }, h('h2', { text: '练习习惯' }),
+    h('p', { class: 'hint', text: '日历只提醒你每天来，不代表进步。累计练了 ' + Object.keys(S.days).filter(active).length + ' 天，完成 ' + lessonsDone() + ' / ' + N + ' 课；语块本 ' + srsN + ' 条，' + mature + ' 条复习间隔已超过 3 周。' }),
+    h('div', { class: 'heat-wrap' }, heat)));
+  const y = window.scrollY; root.replaceChildren(...frag); window.scrollTo(0, y);
 }
 
 /* ================= SETTINGS ================= */
@@ -786,7 +1003,9 @@ async function renderSettings() {
   try {
     const [ls, st] = await Promise.all([api('/api/lessons'), api('/api/status')]);
     LESSONS = ls.lessons; N = LESSONS.length; STATUS = st;
-    await api('/api/state').then(d => { for (const k of ['days', 'lessons', 'srs', 'cards']) if (d[k]) S[k] = d[k]; Object.assign(S.prefs, d.prefs || {}); }).catch(() => {});
+    await Promise.all([
+      api('/api/state').then(d => { for (const k of ['days', 'lessons', 'srs', 'cards']) if (d[k]) S[k] = d[k]; Object.assign(S.prefs, d.prefs || {}); }).catch(() => {}),
+      loadRecs()]);
   } catch (e) { $('#view-today').replaceChildren(h('p', { class: 'err', text: e.message })); return; }
   if (!S.prefs.cur || S.prefs.cur > N) S.prefs.cur = 1;
   CHAT.lesson = S.prefs.cur;
