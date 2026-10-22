@@ -13,7 +13,7 @@ function h(tag, props, ...kids) {
     else if (k.startsWith('on') && typeof v === 'function') e.addEventListener(k.slice(2), v);
     else e.setAttribute(k, v === true ? '' : v);
   }
-  for (const k of kids.flat()) { if (k == null || k === false) continue; e.append(k.nodeType ? k : document.createTextNode(String(k))); }
+  for (const k of kids.flat(Infinity)) { if (k == null || k === false) continue; e.append(k.nodeType ? k : document.createTextNode(String(k))); }
   return e;
 }
 const SVG = {
