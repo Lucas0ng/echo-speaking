@@ -1,0 +1,7 @@
+.venv/
+.window-profile/
+config.json
+data/
+*.log
+__pycache__/
+.DS_Store

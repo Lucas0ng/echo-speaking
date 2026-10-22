@@ -1,0 +1,796 @@
+'use strict';
+/* 每天开口 · 本地版前端 */
+
+/* ================= helpers ================= */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+function h(tag, props, ...kids) {
+  const e = document.createElement(tag);
+  if (props) for (const [k, v] of Object.entries(props)) {
+    if (v == null || v === false) continue;
+    if (k === 'class') e.className = v;
+    else if (k === 'text') e.textContent = v;
+    else if (k.startsWith('on') && typeof v === 'function') e.addEventListener(k.slice(2), v);
+    else e.setAttribute(k, v === true ? '' : v);
+  }
+  for (const k of kids.flat()) { if (k == null || k === false) continue; e.append(k.nodeType ? k : document.createTextNode(String(k))); }
+  return e;
+}
+const SVG = {
+  play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6.5" y="5" width="4" height="14" rx="1"/><rect x="13.5" y="5" width="4" height="14" rx="1"/></svg>',
+  speak: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor" stroke="none"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg>',
+  star: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 4l2.4 5 5.4.6-4 3.7 1.1 5.4L12 16l-4.9 2.7 1.1-5.4-4-3.7 5.4-.6z"/></svg>',
+  starOn: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 4l2.4 5 5.4.6-4 3.7 1.1 5.4L12 16l-4.9 2.7 1.1-5.4-4-3.7 5.4-.6z"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v2.5"/></svg>',
+  stop: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6.5" y="6.5" width="11" height="11" rx="2"/></svg>',
+  x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  send: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 11.5L20 4l-5.5 16-3-6.5z"/></svg>',
+  left: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 6l-6 6 6 6"/></svg>',
+  right: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 6l6 6-6 6"/></svg>',
+};
+function ic(name) { const s = h('span', { class: 'ic', 'aria-hidden': 'true' }); s.innerHTML = SVG[name]; return s; }
+const z2 = n => String(n).padStart(2, '0');
+const ymd = d => d.getFullYear() + '-' + z2(d.getMonth() + 1) + '-' + z2(d.getDate());
+const today = () => ymd(new Date());
+const fmt = s => (isFinite(s) ? z2(Math.floor(s / 60)) + ':' + z2(Math.floor(s % 60)) : '--:--');
+const esc = s => String(s ?? '');
+
+/* ================= api ================= */
+async function api(path, opts = {}) {
+  let r;
+  try { r = await fetch(path, opts); } catch { throw new Error('连不上本地服务。确认「每天开口」的终端窗口还开着。'); }
+  let j = null; try { j = await r.json(); } catch {}
+  if (!r.ok) throw new Error(j?.error || ('请求失败（' + r.status + '）'));
+  return j;
+}
+const post = (p, body) => api(p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+const extOf = b => (/mp4|m4a|aac/.test(b.type) ? '.m4a' : /ogg/.test(b.type) ? '.ogg' : '.webm');
+async function aiText(prompt, { json = true, messages = null, temperature } = {}) {
+  const j = await post('/api/ai/text', { json, messages: messages || [{ role: 'user', content: prompt }], temperature });
+  return json ? j.json : j.text;
+}
+async function aiAudio(blob, prompt) {
+  const fd = new FormData(); fd.append('audio', blob, 'rec' + extOf(blob)); fd.append('prompt', prompt); fd.append('want_json', '1');
+  return (await api('/api/ai/audio', { method: 'POST', body: fd })).json;
+}
+async function stt(blob, ref = '') {
+  const fd = new FormData(); fd.append('audio', blob, 'rec' + extOf(blob)); fd.append('ref', ref);
+  return (await api('/api/stt', { method: 'POST', body: fd })).text;
+}
+const LEARNER = "The learner is a Chinese graduate student (master's level, roughly IELTS 5.5–6.5 speaking) practising spoken English. Explanations for the learner are in simplified Chinese; English examples are natural, spoken and modern.";
+
+/* ================= state ================= */
+const S = { days: {}, lessons: {}, srs: {}, cards: {}, prefs: { cur: 1, voice: '', ttsRate: 0.95, autoSpeak: true, level: 'normal', rate: 1, blind: false } };
+let LESSONS = [], N = 0, STATUS = {}, CFG = null;
+let saveT;
+function save() { clearTimeout(saveT); saveT = setTimeout(() => post('/api/state', S).catch(() => {}), 400); }
+function day(d = today()) { return S.days[d] || (S.days[d] = {}); }
+function lessonRec(n) { return S.lessons[n] || (S.lessons[n] = {}); }
+function markDay(flag) { const d = day(); if (flag === 'ch') d.ch = (d.ch || 0) + 1; else d[flag] = true; save(); renderHeader(); }
+function markLesson(n, step) {
+  const L = lessonRec(n);
+  if (!L[step]) { L[step] = true; if (L.sh && L.ph && L.sp && !L.at) L.at = today(); }
+  markDay(step);
+}
+const active = d => { const v = S.days[d]; return !!(v && (v.sh || v.ph || v.sp || v.ch || v.rv)); };
+const level = d => { const v = S.days[d]; if (!v) return 0; return Math.min(3, ['sh', 'ph', 'sp', 'rv'].filter(k => v[k]).length + (v.ch ? 1 : 0)); };
+function streak() { let n = 0; const c = new Date(); if (!active(ymd(c))) c.setDate(c.getDate() - 1); while (active(ymd(c))) { n++; c.setDate(c.getDate() - 1); } return n; }
+const lessonsDone = () => Object.values(S.lessons).filter(l => l.sh && l.ph && l.sp).length;
+
+/* ================= text to speech ================= */
+let VOICES = [];
+function loadVoices() { try { VOICES = speechSynthesis.getVoices().filter(v => /^en[-_]/i.test(v.lang)); } catch { VOICES = []; } }
+try { loadVoices(); speechSynthesis.onvoiceschanged = () => { loadVoices(); if (TAB === 'settings') renderSettings(); }; } catch {}
+function pickVoice() {
+  return VOICES.find(v => v.voiceURI === S.prefs.voice)
+    || VOICES.find(v => /en-US/i.test(v.lang) && /(Samantha|Ava|Allison|Zoe|Evan|Nathan)/i.test(v.name))
+    || VOICES.find(v => /en-(US|GB)/i.test(v.lang)) || VOICES[0];
+}
+let speakingBtn = null;
+function say(text, btn) {
+  if (!('speechSynthesis' in window) || !text) return;
+  speechSynthesis.cancel(); pauseAll();
+  speakingBtn?.classList.remove('speaking');
+  if (btn && speakingBtn === btn) { speakingBtn = null; return; }
+  speakingBtn = btn || null; btn?.classList.add('speaking');
+  const parts = text.match(/[^.!?]+[.!?]+["')\]]*\s*|[^.!?]+$/g) || [text];
+  let i = 0;
+  const next = () => {
+    if (i >= parts.length) { btn?.classList.remove('speaking'); if (speakingBtn === btn) speakingBtn = null; return; }
+    const u = new SpeechSynthesisUtterance(parts[i++].trim());
+    const v = pickVoice(); if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'en-US';
+    u.rate = S.prefs.ttsRate; u.onend = next; u.onerror = () => btn?.classList.remove('speaking');
+    speechSynthesis.speak(u);
+  };
+  next();
+}
+function sayBtn(text, label = '朗读') { const b = h('button', { class: 'btn ghost icon-btn', title: label, 'aria-label': label }, ic('speak')); b.onclick = () => say(text, b); return b; }
+
+/* ================= chunks (spaced repetition) ================= */
+const findChunk = en => Object.entries(S.srs).find(([, v]) => v.en.toLowerCase() === en.trim().toLowerCase());
+function addChunk(en, zh, src) {
+  en = en.trim(); if (!en) return null;
+  const ex = findChunk(en); if (ex) { if (zh && !ex[1].zh) { ex[1].zh = zh; save(); } return ex[0]; }
+  const id = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  S.srs[id] = { en, zh: zh || '', src: src || '', t: Date.now(), due: Date.now(), ivl: 0, ease: 2.5, reps: 0 };
+  save(); updateBadge(); return id;
+}
+function chunkBtn(en, zh, src) {
+  const b = h('button', { class: 'btn ghost icon-btn' });
+  const paint = () => { const on = !!findChunk(en); b.replaceChildren(ic(on ? 'starOn' : 'star')); b.title = on ? '已在语块本（再点移出）' : '加入语块本'; b.setAttribute('aria-label', b.title); };
+  b.onclick = () => { const f = findChunk(en); if (f) { delete S.srs[f[0]]; save(); updateBadge(); } else addChunk(en, zh, src); paint(); };
+  paint(); return b;
+}
+const dueList = () => Object.entries(S.srs).filter(([, v]) => v.due <= Date.now()).sort((a, b) => a[1].due - b[1].due);
+function schedule(v, g) {
+  v = { ...v }; const DAY = 864e5; const d0 = new Date(); d0.setHours(4, 0, 0, 0); if (Date.now() < d0.getTime()) d0.setDate(d0.getDate() - 1);
+  if (g === 0) { v.reps = 0; v.ivl = 0; v.ease = Math.max(1.3, v.ease - 0.2); v.due = Date.now() + 10 * 60e3; return v; }
+  if (g === 1) { v.ivl = Math.max(1, Math.round((v.ivl || 1) * 1.2)); v.ease = Math.max(1.3, v.ease - 0.15); }
+  else if (g === 2) v.ivl = v.reps === 0 ? 1 : v.reps === 1 ? 3 : Math.round(Math.max(1, v.ivl) * v.ease);
+  else { v.ivl = v.reps === 0 ? 3 : Math.round(Math.max(1, v.ivl) * v.ease * 1.3); v.ease += 0.15; }
+  v.reps++; v.due = d0.getTime() + v.ivl * DAY; return v;
+}
+const ivlText = v => (v.ivl === 0 ? '10 分钟' : v.ivl + ' 天');
+function updateBadge() { const n = dueList().length; const b = $('#dueBadge'); b.textContent = n; b.hidden = !n; }
+
+/* ================= audio: lesson files, recorder ================= */
+const AUDS = new Map();
+function aud(path) {
+  if (!AUDS.has(path)) { const a = new Audio('/api/media?path=' + encodeURIComponent(path)); a.preload = 'metadata'; AUDS.set(path, a); }
+  return AUDS.get(path);
+}
+let segTok = 0, mine = null;
+function pauseAll(except) { for (const a of [...AUDS.values(), ...$$('audio')]) if (a !== except) a.pause(); if (mine && mine !== except) mine.pause(); }
+document.addEventListener('play', e => { segTok++; for (const a of [...AUDS.values(), ...$$('audio')]) if (a !== e.target) a.pause(); if (mine) mine.pause(); try { speechSynthesis.cancel(); } catch {} }, true);
+const NATIVE = new Map();
+function nativeAudio(path) { if (!NATIVE.has(path)) NATIVE.set(path, h('audio', { class: 'native', controls: true, preload: 'metadata', src: '/api/media?path=' + encodeURIComponent(path) })); return NATIVE.get(path); }
+function stopEverything() { segTok++; pauseAll(); try { speechSynthesis.cancel(); } catch {} }
+function playSeg(a, s, e) {
+  const tok = ++segTok; pauseAll(a); try { speechSynthesis.cancel(); } catch {}
+  a.playbackRate = S.prefs.rate;
+  return new Promise(res => {
+    const go = () => {
+      a.currentTime = Math.max(0, s - 0.06);
+      a.play().then(() => {
+        const tick = () => {
+          if (tok !== segTok || a.paused) return res(false);
+          if (a.currentTime >= e + 0.1) { a.pause(); return res(true); }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }).catch(() => res(false));
+    };
+    if (a.readyState >= 1) go(); else a.addEventListener('loadedmetadata', go, { once: true });
+  });
+}
+function playBlobUrl(url) {
+  const tok = ++segTok; pauseAll(); try { speechSynthesis.cancel(); } catch {}
+  mine = new Audio(url);
+  return new Promise(res => { mine.onended = () => res(tok === segTok); mine.onerror = () => res(false); mine.play().catch(() => res(false)); });
+}
+const Rec = {
+  stream: null, mr: null, done: null, owner: null,
+  async start(owner) {
+    if (this.mr) { this.mr.stop(); await this.done; }
+    if (!this.stream || !this.stream.active) {
+      try { this.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); }
+      catch { throw new Error('拿不到麦克风。请在浏览器地址栏左侧允许麦克风，并在 系统设置 › 隐私与安全性 › 麦克风 里允许浏览器。'); }
+    }
+    stopEverything();
+    const mime = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm'].find(m => window.MediaRecorder?.isTypeSupported?.(m));
+    const mr = new MediaRecorder(this.stream, mime ? { mimeType: mime } : undefined);
+    const chunks = [];
+    mr.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+    this.done = new Promise(res => { mr.onstop = () => { this.mr = null; this.owner = null; res(new Blob(chunks, { type: mr.mimeType || 'audio/webm' })); }; });
+    this.mr = mr; this.owner = owner; mr.start();
+  },
+  stop() { if (this.mr && this.mr.state !== 'inactive') this.mr.stop(); return this.done; },
+  isOn(owner) { return !!this.mr && (owner == null || this.owner === owner); },
+};
+
+/* ================= word matching ================= */
+const nt = t => t.toLowerCase().replace(/[’‘]/g, "'").replace(/[^a-z0-9']/g, '');
+function align(refText, heardText) {
+  const toks = refText.split(/\s+/).filter(Boolean);
+  const R = toks.map(nt), H = heardText.split(/\s+/).map(nt).filter(Boolean);
+  const idx = R.map((w, i) => (w ? i : -1)).filter(i => i >= 0);
+  const r = idx.map(i => R[i]);
+  const n = r.length, m = H.length;
+  const dp = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) dp[i][j] = r[i] === H[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const hit = new Array(toks.length).fill(null); let i = 0, j = 0;
+  while (i < n && j < m) { if (r[i] === H[j]) { hit[idx[i]] = true; i++; j++; } else if (dp[i + 1][j] >= dp[i][j + 1]) i++; else j++; }
+  for (const k of idx) if (hit[k] == null) hit[k] = false;
+  const got = idx.filter(k => hit[k]).length;
+  return { toks, hit, score: n ? Math.round(got / n * 100) : 0 };
+}
+function diffView(ref, heard, score) {
+  const a = align(ref, heard);
+  return h('div', { class: 'diff' },
+    a.toks.map((t, k) => [h('span', { class: a.hit[k] === false ? 'miss' : 'hit', text: t }), ' ']),
+    h('span', { class: 'heard', text: '识别到：' + (heard || '（没听清）') + '　·　对上 ' + (score ?? a.score) + '%' }));
+}
+
+/* ================= sentence shadowing ================= */
+const SHADOWS = new Map();
+class Shadow {
+  constructor(path, sents, { onCount, label } = {}) {
+    this.path = path; this.sents = sents; this.cur = 0; this.recs = new Map(); this.res = new Map(); this.ai = new Map();
+    this.onCount = onCount; this.label = label || ''; this.auto = false; this.busy = new Set(); this.recording = null;
+    this.boothEl = h('div', { class: 'booth' }); this.listEl = h('div', { class: 'script' }); this.barEl = h('div', { class: 'auto-bar' });
+  }
+  get audio() { return aud(this.path); }
+  rerender() { this.renderBooth(); this.renderList(); this.renderBar(); }
+  focus(i) {
+    this.cur = Math.max(0, Math.min(this.sents.length - 1, i)); this.rerender();
+    const r = this.listEl.children[this.cur]; if (r) r.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+  dur(i) { const s = this.sents[i]; return Math.max(1.2, (s.e - s.s) / (S.prefs.rate || 1)); }
+  async record(i) {
+    if (Rec.isOn(this)) { Rec.stop(); return; }
+    try { await Rec.start(this); } catch (e) { alertBox(e.message); return; }
+    this.recording = i; this.rerender();
+    const t = setTimeout(() => Rec.stop(), (this.dur(i) * 1.5 + 1.6) * 1000);
+    const blob = await Rec.done; clearTimeout(t); this.recording = null;
+    if (blob.size < 800) { this.rerender(); return; }
+    const old = this.recs.get(i); if (old) URL.revokeObjectURL(old.url);
+    this.recs.set(i, { blob, url: URL.createObjectURL(blob) });
+    this.res.delete(i); this.ai.delete(i);
+    this.onCount?.(this.recs.size);
+    this.rerender();
+    this.check(i);
+  }
+  async check(i) {
+    const r = this.recs.get(i); if (!r) return;
+    this.busy.add('chk' + i); this.rerender();
+    try { const heard = await stt(r.blob, this.sents[i].text); this.res.set(i, { heard, score: align(this.sents[i].text, heard).score }); }
+    catch (e) { this.res.set(i, { error: e.message }); }
+    this.busy.delete('chk' + i); this.rerender();
+  }
+  async listen(i) {
+    const r = this.recs.get(i); if (!r) return;
+    this.busy.add('ai' + i); this.rerender();
+    try {
+      const j = await aiAudio(r.blob, LEARNER + '\n\nThe audio is the learner shadowing (repeating) this reference sentence after a native speaker:\n"' + this.sents[i].text + '"\nListen carefully to HOW they say it. Judge pronunciation of individual sounds and words, word stress, linking, rhythm and intonation compared with how a native speaker would say this sentence. Be specific and honest; if it sounds good, say so briefly.\nJSON: {"score": integer 1-10 (overall closeness to native delivery), "summary_zh": "中文一句总评", "issues": [{"word": "the word or phrase", "problem_zh": "具体问题（中文）", "tip_zh": "怎么改（中文，可写音标或类似中文发音提示）"}]} with at most 3 issues.');
+      this.ai.set(i, j);
+    } catch (e) { this.ai.set(i, { error: e.message }); }
+    this.busy.delete('ai' + i); this.rerender();
+  }
+  async compare(i) { const r = this.recs.get(i); if (!r) return; const s = this.sents[i]; if (await playSeg(this.audio, s.s, s.e)) await playBlobUrl(r.url); }
+  async runAuto() {
+    if (this.auto) { this.auto = false; stopEverything(); Rec.stop(); this.rerender(); return; }
+    this.auto = true; this.rerender();
+    for (let i = this.cur; i < this.sents.length && this.auto; i++) {
+      this.focus(i);
+      const s = this.sents[i];
+      if (!(await playSeg(this.audio, s.s, s.e)) || !this.auto) break;
+      await this.record(i);
+    }
+    this.auto = false; this.rerender();
+  }
+  renderBar() {
+    this.barEl.replaceChildren(
+      h('span', { class: 'grow', text: this.auto ? '连续跟读中：听一句，灯亮时跟着说，录完自动下一句。' : '连续跟读会从当前句开始，播放一句、录你一句，自动往下走。' }),
+      h('button', { class: 'btn ' + (this.auto ? 'rec' : ''), onclick: () => this.runAuto() }, this.auto ? [ic('stop'), '停下'] : [ic('play'), '连续跟读']));
+  }
+  renderBooth() {
+    const i = this.cur, s = this.sents[i]; if (!s) return;
+    const rec = this.recs.get(i), res = this.res.get(i), ai = this.ai.get(i), recOn = this.recording === i;
+    this.boothEl.className = 'booth' + (recOn ? ' live' : '');
+    const kids = [
+      h('div', { class: 'meta' }, h('span', { text: '第 ' + (i + 1) + ' / ' + this.sents.length + ' 句' }), h('span', { text: fmt(s.s) + ' – ' + fmt(s.e) })),
+      h('p', { class: 'line' + (S.prefs.blind && !rec ? ' blind' : ''), text: s.text }),
+      h('div', { class: 'controls' },
+        h('button', { class: 'big-play', title: '听原声', 'aria-label': '听原声', onclick: () => playSeg(this.audio, s.s, s.e) }, ic('play')),
+        h('button', { class: 'big-rec' + (recOn ? ' on' : ''), onclick: () => this.record(i) }, recOn ? [h('span', { class: 'rec-dot', style: 'background:#fff' }), '说完了'] : [ic('mic'), rec ? '重新跟读' : '跟读这句']),
+        rec ? h('button', { class: 'btn', onclick: () => playBlobUrl(rec.url) }, '听我的') : null,
+        rec ? h('button', { class: 'btn', onclick: () => this.compare(i) }, '对比听') : null,
+        rec ? h('button', { class: 'btn', disabled: this.busy.has('ai' + i), onclick: () => this.listen(i) }, this.busy.has('ai' + i) ? 'AI 在听…' : 'AI 听发音') : null,
+        h('span', { class: 'grow' }),
+        chunkBtn(s.text, '', this.label),
+        h('button', { class: 'btn ghost icon-btn', 'aria-label': '上一句', title: '上一句', disabled: i <= 0, onclick: () => this.focus(i - 1) }, ic('left')),
+        h('button', { class: 'btn ghost icon-btn', 'aria-label': '下一句', title: '下一句', disabled: i >= this.sents.length - 1, onclick: () => this.focus(i + 1) }, ic('right'))),
+    ];
+    if (this.busy.has('chk' + i)) kids.push(h('p', { class: 'thinking', text: '本地识别中…' }));
+    else if (res?.error) kids.push(h('p', { class: 'err', text: res.error }));
+    else if (res) kids.push(diffView(s.text, res.heard, res.score));
+    else if (!rec) kids.push(h('p', { class: 'hint', text: '听一遍原声，再按「跟读这句」。录完会自动比对，标出没说清的词。' }));
+    if (ai) kids.push(ai.error ? h('p', { class: 'err', text: ai.error }) : h('div', { class: 'ai-note' },
+      h('div', { class: 'row' }, ai.score != null ? h('span', { class: 'tag lamp', text: '发音 ' + ai.score + ' / 10' }) : null, h('span', { text: esc(ai.summary_zh) })),
+      (ai.issues || []).slice(0, 3).map(x => h('div', { class: 'small' }, h('b', { text: esc(x.word) }), '：' + esc(x.problem_zh) + (x.tip_zh ? '。' + x.tip_zh : '')))));
+    this.boothEl.replaceChildren(...kids);
+  }
+  renderList() {
+    const keep = this.listEl.scrollTop;
+    this.listEl.replaceChildren(...this.sents.map((s, i) => {
+      const res = this.res.get(i), rec = this.recs.get(i);
+      const st = this.recording === i ? h('span', { class: 'st' }, h('span', { class: 'rec-dot' })) :
+        res?.score != null ? h('span', { class: 'st' + (res.score >= 80 ? ' ok' : ''), text: res.score + '%' }) :
+        rec ? h('span', { class: 'st ok' }, ic('check')) : h('span', { class: 'st' });
+      return h('div', { class: 'sent' + (i === this.cur ? ' cur' : ''), onclick: () => this.focus(i) },
+        h('span', { class: 'ts', text: fmt(s.s) }), h('span', { class: 'tx' + (S.prefs.blind && !rec ? ' blind' : ''), text: s.text }), st);
+    }));
+    this.listEl.scrollTop = keep;
+  }
+  view({ list = true } = {}) {
+    this.rerender();
+    return h('div', { class: 'card' }, this.boothEl, list ? this.barEl : null, list ? this.listEl : null);
+  }
+}
+
+/* ================= transcripts ================= */
+const TR = new Map();
+async function transcript(path) {
+  if (TR.get(path)?.sentences) return TR.get(path);
+  const j = await api('/api/transcript?ensure=1&path=' + encodeURIComponent(path));
+  TR.set(path, j); return j;
+}
+const POLL = {};
+function pollLater(path) {
+  clearTimeout(POLL[path]);
+  POLL[path] = setTimeout(async () => {
+    const j = await api('/api/transcript?path=' + encodeURIComponent(path)).catch(() => null);
+    if (j?.sentences) { TR.set(path, j); if (TAB === 'today') renderToday(); return; }
+    const el = document.getElementById('trHint-' + path);
+    if (el && j) el.textContent = '正在用本地 Whisper 生成逐句字幕（前面还有 ' + (j.queue || 0) + ' 个），先听整集。';
+    pollLater(path);
+  }, 4000);
+}
+
+/* ================= header & tabs ================= */
+function renderHeader() {
+  $('#streakNum').textContent = streak();
+  const wk = $('#weekDots'); wk.replaceChildren();
+  for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); const k = ymd(d); wk.append(h('i', { class: (active(k) ? 'on' : '') + (i === 0 ? ' today' : ''), title: k })); }
+  $('#subline').textContent = '已完成 ' + lessonsDone() + ' / ' + N + ' 课';
+  if (STATUS.lessons) $('#railFoot').textContent = STATUS.ielts_transcribed >= STATUS.lessons ? '全部字幕已就绪' : '本地字幕 ' + STATUS.ielts_transcribed + ' / ' + STATUS.lessons + ' 集，空闲时在后台生成';
+}
+let TAB = 'today';
+function setTab(t) {
+  if (!['today', 'chunks', 'chat', 'log', 'settings'].includes(t)) t = 'today';
+  if (TAB !== t) stopEverything();
+  TAB = t;
+  $$('.nav a').forEach(a => a.setAttribute('aria-selected', String(a.dataset.tab === t)));
+  $$('main[data-view]').forEach(m => { m.hidden = m.dataset.view !== t; });
+  ({ today: renderToday, chunks: renderChunks, chat: renderChat, log: renderLog, settings: renderSettings })[t]();
+  if (location.hash !== '#' + t) history.replaceState(null, '', '#' + t);
+}
+$$('.nav a').forEach(a => a.addEventListener('click', e => { e.preventDefault(); setTab(a.dataset.tab); }));
+window.addEventListener('hashchange', () => { const t = location.hash.slice(1); if (t && t !== TAB) setTab(t); });
+function alertBox(msg) { const n = h('div', { class: 'notice', style: 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:20;max-width:90vw;box-shadow:0 6px 24px rgba(0,0,0,.18)' }, msg); document.body.append(n); setTimeout(() => n.remove(), 5000); }
+
+/* ================= TODAY ================= */
+const topicText = L => L.t;
+function promptText(L) { const t = L.t; if (L.p === 2) return 'Describe ' + t.charAt(0).toLowerCase() + t.slice(1) + '.'; if (L.p === 3) return 'Discuss: ' + t + '. What do you think, and why?'; return 'Talk about: ' + t + '.'; }
+function needKeyNote(kind) {
+  const ok = kind === 'omni' ? STATUS.providers?.omni : STATUS.providers?.[STATUS.text_provider];
+  if (ok) return null;
+  return h('p', { class: 'hint warn' }, kind === 'omni' ? '「AI 听发音」需要先在设置里填百炼（Qwen-Omni）的 API key。' : 'AI 功能需要先在设置里填 DeepSeek 或 GLM 的 API key。', ' ', h('a', { href: '#settings', onclick: e => { e.preventDefault(); setTab('settings'); } }, '去设置'));
+}
+const LP = {};
+const lp = n => LP[n] || (LP[n] = { sentence: '', check: null, talk: '', review: null, audioReview: null, blob: null, busy: {}, step: null });
+function seg(values, cur, onPick, fmtv = v => v + '×') {
+  const box = h('div', { class: 'seg', role: 'group' });
+  for (const v of values) box.append(h('button', { 'aria-pressed': String(v === cur), onclick: e => { $$('button', box).forEach(b => b.setAttribute('aria-pressed', String(b === e.currentTarget))); onPick(v); } }, fmtv(v)));
+  return box;
+}
+function micButton(owner, onBlob, labels = ['说', '停']) {
+  const on = Rec.isOn(owner);
+  return h('button', { class: 'btn ' + (on ? 'rec' : ''), onclick: async () => {
+    if (Rec.isOn(owner)) { Rec.stop(); return; }
+    try { await Rec.start(owner); } catch (e) { alertBox(e.message); return; }
+    rerenderOwner(owner);
+    const blob = await Rec.done; rerenderOwner(owner); if (blob.size > 800) onBlob(blob);
+  } }, on ? [h('span', { class: 'rec-dot', style: 'background:#fff' }), labels[1]] : [ic('mic'), labels[0]]);
+}
+function rerenderOwner(owner) { if (String(owner).startsWith('chat')) renderChat(); else if (String(owner).startsWith('rev')) renderChunks(); else renderToday(); }
+
+let RTOK = 0;
+async function renderToday() {
+  const root = $('#view-today'); if (root.hidden) return;
+  const myTok = ++RTOK;
+  if (!N) { root.replaceChildren(h('p', { class: 'err', text: STATUS.lesson_error || '没有读到课程。检查设置里的资料文件夹。' })); return; }
+  const n = S.prefs.cur, L = LESSONS[n - 1], rec = lessonRec(n), st = lp(n);
+  if (!st.step) st.step = !rec.sh ? 1 : !rec.ph ? 2 : !rec.sp ? 3 : 1;
+  const frag = [];
+
+  const sel = h('select', { 'aria-label': '选择课程', onchange: e => goLesson(+e.target.value) },
+    LESSONS.map((x, i) => { const r = S.lessons[i + 1]; return h('option', { value: i + 1, selected: i + 1 === n }, (r && r.sh && r.ph && r.sp ? '✓ ' : '') + (i + 1) + '. ' + x.t); }));
+  frag.push(h('header', { class: 'lesson-head' },
+    h('div', { class: 'lesson-nav' },
+      h('div', { class: 'row' },
+        h('button', { class: 'btn ghost icon-btn', 'aria-label': '上一课', disabled: n <= 1, onclick: () => goLesson(n - 1) }, ic('left')),
+        h('span', { class: 'mono', text: '第 ' + n + ' 课，共 ' + N + ' 课' }),
+        h('button', { class: 'btn ghost icon-btn', 'aria-label': '下一课', disabled: n >= N, onclick: () => goLesson(n + 1) }, ic('right'))), sel),
+    h('h2', { class: 'lesson-title', text: L.t }),
+    h('div', { class: 'lesson-sub' }, h('span', { class: 'tag', text: '雅思口语 Part ' + L.p }), h('span', { class: 'tag lamp', text: '今日语块：' + L.x }))));
+
+  const steps = [[1, '逐句跟读', 'IELTSCast，约 10 分钟', rec.sh], [2, '今日语块', 'BBC 原声，约 5 分钟', rec.ph], [3, '开口说', '自述并点评，约 3 分钟', rec.sp]];
+  frag.push(h('nav', { class: 'stepper', 'aria-label': '本课步骤' }, steps.map(([k, t, sub, done]) =>
+    h('button', { class: done ? 'is-done' : '', 'aria-current': st.step === k ? 'step' : null, onclick: () => { st.step = k; stopEverything(); renderToday(); } },
+      h('span', { class: 'n' }, done ? ic('check') : String(k)), h('b', { text: t }), h('small', { text: sub })))));
+
+  const panel = h('section', { class: 'panel' });
+  if (st.step === 1) await buildStep1(panel, n, L, rec);
+  else if (st.step === 2) await buildStep2(panel, n, L, rec, st);
+  else buildStep3(panel, n, L, rec, st);
+  frag.push(panel);
+
+  if (rec.sh && rec.ph && rec.sp) frag.push(h('div', { class: 'next-cta' }, h('span', { text: '第 ' + n + ' 课完成了。' }),
+    h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => startChatOn(n) }, '用这个话题和 AI 聊聊'), n < N ? h('button', { class: 'btn primary', onclick: () => goLesson(n + 1) }, '下一课') : null)));
+
+  if (myTok !== RTOK || $('#view-today').hidden || S.prefs.cur !== n) return;
+  const y = window.scrollY; root.replaceChildren(...frag); window.scrollTo(0, y);
+}
+function nextStepButton(n, k, rec, flag, label) {
+  const st = lp(n);
+  return h('div', { class: 'panel-foot' },
+    rec[flag] ? h('span', { class: 'tag good', text: '这一步已完成' }) : h('button', { class: 'btn ghost', onclick: () => { markLesson(n, flag); renderToday(); } }, label),
+    h('span', { class: 'grow' }),
+    k < 3 ? h('button', { class: 'btn primary', onclick: () => { st.step = k + 1; stopEverything(); renderToday(); window.scrollTo({ top: 0 }); } }, '下一步', ic('right')) :
+      h('button', { class: 'btn', onclick: () => startChatOn(n) }, '用这个话题和 AI 对话'));
+}
+async function buildStep1(panel, n, L, rec) {
+  let tr = TR.get(L.f);
+  if (!tr?.sentences) { try { tr = await transcript(L.f); } catch (e) { tr = { status: 'error', error: e.message }; } }
+  if (tr.sentences) {
+    let sh = SHADOWS.get(L.f);
+    if (!sh) { sh = new Shadow(L.f, tr.sentences, { label: 'IELTSCast：' + L.t, onCount: c => { if (c >= 5 && !lessonRec(n).sh) markLesson(n, 'sh'); } }); SHADOWS.set(L.f, sh); }
+    panel.append(
+      h('p', { class: 'intro', text: (L.w ? '这一集原音频带停顿。' : '') + '选一句，先听原声，再跟读。录完自动用本地 Whisper 比对，跟读满 5 句这一步就完成。' }),
+      sh.view(),
+      h('div', { class: 'script-bar' },
+        h('span', {}, '速度'), seg([0.75, 0.85, 1], S.prefs.rate, v => { S.prefs.rate = v; save(); }),
+        h('label', { class: 'row' }, h('input', { type: 'checkbox', checked: S.prefs.blind, onchange: e => { S.prefs.blind = e.target.checked; save(); sh.rerender(); } }), '盲跟：跟读前不显示原文'),
+        h('span', { class: 'grow' }), h('span', { class: 'mono', text: '已跟读 ' + sh.recs.size + ' / ' + sh.sents.length + ' 句' })),
+      needKeyNote('omni'));
+  } else {
+    panel.append(h('p', { class: 'thinking', id: 'trHint-' + L.f, text: String(tr.status).startsWith('error') ? '字幕生成失败：' + (tr.error || tr.status) : '正在用本地 Whisper 给这一集生成逐句字幕，大约一两分钟。先听整集。' }), nativeAudio(L.f));
+    pollLater(L.f);
+  }
+  panel.append(nextStepButton(n, 1, rec, 'sh', '标记跟读完成'));
+}
+async function buildStep2(panel, n, L, rec, st) {
+  const card = S.cards[n];
+  panel.append(
+    h('div', { class: 'phrase-hero' }, h('div', { class: 'phrase grow' }, h('mark', { text: L.x })), sayBtn(L.x, '朗读语块'), chunkBtn(L.x, card?.meaning_zh || '', 'BBC The English We Speak')),
+    h('p', { class: 'intro', text: '先听 BBC 原声，弄清它在什么情境下用；再看讲解；最后用它说一句关于你自己的话。' }),
+    nativeAudio(L.b));
+  const btr = TR.get(L.b)?.sentences ? TR.get(L.b) : await transcript(L.b).catch(() => ({}));
+  if (btr.sentences) {
+    const stop = ['the', 'and', 'your', 'someone', 'something', "one's", 'into', 'with', 'for', 'out'];
+    const keys = L.x.toLowerCase().replace(/[^a-z' ]/g, ' ').split(/\s+/).filter(w => w.length > 2 && !stop.includes(w));
+    const hits = btr.sentences.filter(s => { const t = s.text.toLowerCase(); return keys.length && keys.every(k => t.includes(k.slice(0, Math.max(3, k.length - 2)))); }).slice(0, 6);
+    if (hits.length) {
+      let bsh = SHADOWS.get(L.b + '#hits');
+      if (!bsh) { bsh = new Shadow(L.b, hits, { label: 'BBC：' + L.x }); SHADOWS.set(L.b + '#hits', bsh); }
+      panel.append(h('h3', { class: 'sub-h', text: '原声里的用法，跟读一遍' }), bsh.view());
+    }
+  } else pollLater(L.b);
+  const cardBox = h('div', { class: 'card' });
+  if (card) renderCard(cardBox, card, L);
+  else {
+    const out = h('div');
+    const b = h('button', { class: 'btn', disabled: !!st.busy.card, onclick: async () => {
+      st.busy.card = true; b.disabled = true; out.replaceChildren(h('p', { class: 'thinking', text: 'AI 正在写讲解' }));
+      try {
+        const c = await aiText(LEARNER + '\n\nExplain the English chunk "' + L.x + '" (topic of a BBC Learning English "The English We Speak" episode). Write your own examples.\nJSON: {"meaning_zh": "意思（中文，一句话）", "register": "informal" | "neutral" | "slang" | "formal", "note_zh": "什么时候用、什么时候别用（中文，一两句）", "examples": [{"en": "...", "zh": "..."}]} with exactly 3 examples: one about study or research life, one about daily life, one short reply in a conversation.');
+        if (!c?.meaning_zh || !Array.isArray(c.examples)) throw new Error('AI 返回的格式不对，再试一次。');
+        S.cards[n] = { meaning_zh: String(c.meaning_zh), register: String(c.register || ''), note_zh: String(c.note_zh || ''), examples: c.examples.slice(0, 3).map(e => ({ en: String(e.en || ''), zh: String(e.zh || '') })) };
+        addChunk(L.x, S.cards[n].meaning_zh, 'BBC The English We Speak');
+        save(); st.busy.card = false; renderToday();
+      } catch (e) { st.busy.card = false; b.disabled = false; out.replaceChildren(h('p', { class: 'err', text: e.message })); }
+    } }, '生成讲解和例句');
+    cardBox.append(h('div', { class: 'row' }, b, h('span', { class: 'hint', text: '生成后这个语块会进语块本，按遗忘曲线安排复习。' })), out, needKeyNote('text'));
+  }
+  panel.append(cardBox);
+  const ta = h('textarea', { placeholder: '用「' + L.x + '」说一句和你自己有关的话。点「说」录音，会自动转成文字。', style: 'min-height:72px' });
+  ta.value = st.sentence; ta.oninput = () => { st.sentence = ta.value; };
+  const chk = h('div');
+  const cb = h('button', { class: 'btn primary', onclick: async () => {
+    const s = ta.value.trim(); if (!s) { ta.focus(); return; }
+    cb.disabled = true; chk.replaceChildren(h('p', { class: 'thinking', text: 'AI 正在看' }));
+    try {
+      const r = await aiText(LEARNER + '\n\nThe learner tried to use the chunk "' + L.x + '"' + (card ? ' (meaning: ' + card.meaning_zh + ')' : '') + ' in this sentence (from speech-to-text; ignore punctuation):\n"' + s + '"\nJSON: {"ok": true or false, "better": "a corrected, more natural version that still uses the chunk", "note_zh": "中文点评，一两句"}');
+      st.check = { ok: !!r.ok, better: String(r.better || ''), note: String(r.note_zh || '') };
+      markLesson(n, 'ph'); renderToday();
+    } catch (e) { cb.disabled = false; chk.replaceChildren(h('p', { class: 'err', text: e.message })); }
+  } }, '检查这句');
+  if (st.check) chk.append(h('div', { class: 'result' },
+    h('div', { class: 'row' }, h('span', { class: 'tag ' + (st.check.ok ? 'good' : 'lamp'), text: st.check.ok ? '用对了' : '可以更好' }), h('span', { text: st.check.note })),
+    st.check.better ? h('div', { class: 'say' }, h('p', { text: st.check.better }), sayBtn(st.check.better), chunkBtn(st.check.better, '', '造句：' + L.x)) : null));
+  panel.append(h('h3', { class: 'sub-h', text: '轮到你' }), ta, h('div', { class: 'row' },
+    micButton('ph' + n, async blob => { try { const t = await stt(blob, L.x); st.sentence = (st.sentence ? st.sentence + ' ' : '') + t; } catch (e) { alertBox(e.message); } renderToday(); }),
+    cb), chk, nextStepButton(n, 2, rec, 'ph', '跳过检查，标记完成'));
+}
+function buildStep3(panel, n, L, rec, st) {
+  const dur = L.p === 2 ? 120 : 60, prompt = promptText(L);
+  panel.append(
+    h('div', { class: 'row' }, h('p', { class: 'prompt grow', text: prompt }), sayBtn(prompt, '朗读题目')),
+    h('p', { class: 'intro', text: (L.p === 2 ? 'Part 2：先想 1 分钟，再连续说 2 分钟。' : '说 1 分钟，给理由和例子。') + '试着把「' + L.x + '」用进去。' }));
+  const recOn = Rec.isOn('sp' + n);
+  const tb = h('b', { id: 'spT', text: recOn ? fmt(SPT.elapsed) : fmt(dur) }), bar = h('i', { id: 'spBar', style: 'width:' + (recOn ? Math.min(100, SPT.elapsed / dur * 100) : 0) + '%' });
+  panel.append(h('div', { class: 'timer' },
+    h('button', { class: 'big-rec' + (recOn ? ' on' : ''), onclick: () => speakRec(n, dur) }, recOn ? [h('span', { class: 'rec-dot', style: 'background:#fff' }), '说完了'] : [ic('mic'), st.blob ? '重新说一遍' : '开始说']),
+    tb, h('div', { class: 'bar' }, bar),
+    st.blob && !recOn ? h('button', { class: 'btn', onclick: () => playBlobUrl(st.url) }, ic('play'), '回放') : null));
+  const ta2 = h('textarea', { placeholder: '说完会自动转成文字。识别错的地方可以手动改。' });
+  ta2.value = st.talk; ta2.oninput = () => { st.talk = ta2.value; };
+  panel.append(st.busy.stt ? h('p', { class: 'thinking', text: '本地转写中' }) : null, ta2);
+  const rb = h('button', { class: 'btn primary', disabled: !!st.busy.review, onclick: async () => {
+    const s = ta2.value.trim(); if (s.split(/\s+/).length < 8) { alertBox('再多说几句（至少 8 个词）再点评。'); return; }
+    st.busy.review = true; renderToday();
+    try {
+      st.review = await aiText(LEARNER + '\n\nIELTS-style speaking task (Part ' + L.p + '): "' + prompt + '"\nTarget chunk for today: "' + L.x + '".\nSpeech-to-text transcript of the learner (ignore punctuation and obvious mis-hearings):\n---\n' + s.slice(0, 6000) + '\n---\nJSON: {"comment_zh": "中文两句：做得好的一点 + 最该改的一点", "band": "rough IELTS speaking band, e.g. \\"6.0\\"", "corrected": "their answer with grammar and word choice fixed, same meaning", "natural": "a more fluent, natural version, about the same length", "fixes": [{"original": "...", "better": "...", "why_zh": "中文一句"}], "chunks": [{"en": "a useful multi-word chunk for this topic", "zh": "..."}], "used_target": true or false}. At most 5 fixes. Exactly 4 chunks (multi-word expressions, not single words).');
+      markLesson(n, 'sp');
+    } catch (e) { alertBox(e.message); }
+    st.busy.review = false; renderToday();
+  } }, st.busy.review ? 'AI 点评中' : '点评内容');
+  const ab = h('button', { class: 'btn', disabled: !st.blob || !!st.busy.audio, onclick: async () => {
+    st.busy.audio = true; renderToday();
+    try {
+      st.audioReview = await aiAudio(st.blob, LEARNER + '\n\nThe audio is the learner answering this IELTS speaking question: "' + prompt + '". Listen to HOW they speak, not only what they say. Assess like an IELTS examiner: fluency and coherence, pronunciation (individual sounds, word stress, sentence stress, intonation, chunking), and how natural they sound.\nJSON: {"band_pron": "pronunciation band e.g. \\"6.0\\"", "band_fluency": "fluency band", "summary_zh": "中文两三句总评", "pron_issues": [{"word": "word or phrase as heard", "problem_zh": "...", "tip_zh": "..."}], "fluency_tips_zh": ["..."]}. At most 4 pron_issues and 3 fluency tips.');
+      markLesson(n, 'sp');
+    } catch (e) { alertBox(e.message); }
+    st.busy.audio = false; renderToday();
+  } }, st.busy.audio ? 'AI 在听' : '听发音和流利度');
+  panel.append(h('div', { class: 'row' }, rb, ab), needKeyNote('text'));
+  if (st.audioReview) panel.append(renderAudioReview(st.audioReview));
+  if (st.review) panel.append(renderReview(st.review, L));
+  panel.append(nextStepButton(n, 3, rec, 'sp', '只说不点评，标记完成'));
+}
+const SPT = { elapsed: 0, iv: null };
+async function speakRec(n, dur) {
+  const owner = 'sp' + n, st = lp(n);
+  if (Rec.isOn(owner)) { Rec.stop(); return; }
+  try { await Rec.start(owner); } catch (e) { alertBox(e.message); return; }
+  SPT.elapsed = 0; clearInterval(SPT.iv);
+  SPT.iv = setInterval(() => { SPT.elapsed++; const t = $('#spT'), b = $('#spBar'); if (t) t.textContent = fmt(SPT.elapsed); if (b) b.style.width = Math.min(100, SPT.elapsed / dur * 100) + '%'; if (SPT.elapsed >= dur + 60) Rec.stop(); }, 1000);
+  renderToday();
+  const blob = await Rec.done; clearInterval(SPT.iv);
+  if (blob.size < 800) { renderToday(); return; }
+  if (st.url) URL.revokeObjectURL(st.url);
+  st.blob = blob; st.url = URL.createObjectURL(blob); st.review = null; st.audioReview = null; st.busy.stt = true; renderToday();
+  try { st.talk = await stt(blob); } catch (e) { alertBox(e.message); }
+  st.busy.stt = false; renderToday();
+}
+function renderCard(box, c, L) {
+  box.append(h('div', { class: 'row' }, h('p', { class: 'grow', text: c.meaning_zh }), c.register ? h('span', { class: 'tag', text: ({ informal: '口语', neutral: '通用', slang: '俚语', formal: '正式' })[c.register] || c.register }) : null));
+  if (c.note_zh) box.append(h('p', { class: 'hint', text: c.note_zh }));
+  const list = h('div');
+  for (const e of c.examples || []) list.append(h('div', { class: 'ex' }, sayBtn(e.en), h('span', { class: 'en', text: e.en }), chunkBtn(e.en, e.zh, '例句 · ' + L.x), h('span', { class: 'zh', text: e.zh })));
+  box.append(list);
+}
+function renderReview(r, L) {
+  const box = h('div', { class: 'result' }, h('h3', { text: '内容点评' }));
+  box.append(h('div', { class: 'row' }, r.band ? h('span', { class: 'tag', text: '大约 ' + r.band + ' 分' }) : null, r.used_target ? h('span', { class: 'tag good', text: '用上了「' + L.x + '」' }) : null));
+  if (r.comment_zh) box.append(h('p', { text: esc(r.comment_zh) }));
+  if (r.corrected) box.append(h('div', {}, h('h3', { text: '改正版' }), h('div', { class: 'say' }, h('p', { text: esc(r.corrected) }), sayBtn(esc(r.corrected)))));
+  if (r.natural) box.append(h('div', {}, h('h3', { text: '更地道的说法 · 拿来跟读' }), h('div', { class: 'say' }, h('p', { text: esc(r.natural) }), sayBtn(esc(r.natural)))));
+  if (Array.isArray(r.fixes) && r.fixes.length) { const f = h('div', { class: 'card' }, h('h3', { text: '要改的地方' })); for (const x of r.fixes.slice(0, 5)) f.append(h('div', { class: 'fix' }, h('div', {}, h('s', { text: esc(x.original) }), ' → ', h('b', { text: esc(x.better) })), h('span', { class: 'hint', text: esc(x.why_zh) }))); box.append(f); }
+  if (Array.isArray(r.chunks) && r.chunks.length) { const p = h('div', {}, h('h3', { text: '这个话题用得上的语块' })); for (const x of r.chunks.slice(0, 4)) p.append(h('div', { class: 'ex' }, sayBtn(esc(x.en)), h('span', { class: 'en', text: esc(x.en) }), chunkBtn(esc(x.en), esc(x.zh), '话题 · ' + L.t), h('span', { class: 'zh', text: esc(x.zh) }))); box.append(p); }
+  return box;
+}
+function renderAudioReview(r) {
+  const box = h('div', { class: 'result' }, h('h3', { text: 'AI 听你说' }));
+  box.append(h('div', { class: 'row' }, r.band_pron ? h('span', { class: 'tag', text: '发音约 ' + r.band_pron }) : null, r.band_fluency ? h('span', { class: 'tag', text: '流利度约 ' + r.band_fluency }) : null));
+  if (r.summary_zh) box.append(h('p', { text: esc(r.summary_zh) }));
+  for (const x of (r.pron_issues || []).slice(0, 4)) box.append(h('div', { class: 'fix' }, h('b', { text: esc(x.word) }), h('span', { class: 'hint', text: esc(x.problem_zh) + (x.tip_zh ? ' → ' + x.tip_zh : '') })));
+  for (const t of (r.fluency_tips_zh || []).slice(0, 3)) box.append(h('p', { class: 'small', text: '· ' + t }));
+  return box;
+}
+function goLesson(n) { n = Math.max(1, Math.min(N, n)); stopEverything(); S.prefs.cur = n; if (!CHAT.started) CHAT.lesson = n; save(); renderHeader(); renderToday(); window.scrollTo({ top: 0 }); }
+
+/* ================= CHUNKS (语块本) ================= */
+const RV = { on: false, id: null, shown: false, heard: null, busy: false, done: 0 };
+function renderChunks() {
+  const root = $('#view-chunks'); if (root.hidden) return;
+  updateBadge();
+  const due = dueList();
+  const frag = [h('h2', { class: 'page-title', text: '语块本' })];
+  if (RV.on) {
+    if (!RV.id || !S.srs[RV.id] || S.srs[RV.id].due > Date.now()) { RV.id = due[0]?.[0] || null; RV.shown = false; RV.heard = null; }
+    if (!RV.id) { RV.on = false; frag.push(h('div', { class: 'next-cta' }, h('span', { text: '今天的复习完成了，一共 ' + RV.done + ' 条。' }), h('button', { class: 'btn', onclick: () => { RV.done = 0; renderChunks(); } }, '好'))); }
+    else {
+      const v = S.srs[RV.id];
+      const card = h('div', { class: 'review' },
+        h('div', { class: 'src', text: '还剩 ' + due.length + ' 条 · ' + (v.src || '') }),
+        h('div', { class: 'q', text: v.zh || '（没有中文意思）先回忆，再说出英文' }));
+      if (!RV.shown) {
+        card.append(h('p', { class: 'hint', text: '先开口说出英文，再看答案。说出来比在心里想更能记住。' }),
+          h('div', { class: 'row' },
+            micButton('rev', async blob => { RV.busy = true; renderChunks(); try { RV.heard = await stt(blob, v.en); } catch (e) { alertBox(e.message); } RV.busy = false; RV.shown = true; renderChunks(); say(v.en); }, ['说出来', '说完了']),
+            h('button', { class: 'btn', onclick: () => { RV.shown = true; renderChunks(); say(v.en); } }, '直接看答案')));
+        if (RV.busy) card.append(h('p', { class: 'thinking', text: '识别中…' }));
+      } else {
+        card.append(h('div', { class: 'row' }, h('div', { class: 'a', text: v.en }), sayBtn(v.en)));
+        if (RV.heard != null) card.append(diffView(v.en, RV.heard));
+        card.append(h('div', { class: 'grades' }, [['忘了', 0], ['模糊', 1], ['想起来了', 2], ['脱口而出', 3]].map(([t, g]) => h('button', { class: 'btn', onclick: () => { S.srs[RV.id] = schedule(v, g); RV.done++; markDay('rv'); RV.id = null; save(); renderChunks(); } }, t, h('small', { text: ivlText(schedule(v, g)) })))));
+      }
+      frag.push(card, h('div', { class: 'row' }, h('button', { class: 'btn ghost', onclick: () => { RV.on = false; renderChunks(); } }, '先停在这')));
+    }
+  } else {
+    frag.push(h('div', { class: 'next-cta', style: due.length ? '' : 'background:var(--sunk);color:var(--muted)' },
+      h('span', { text: due.length ? '今天要复习 ' + due.length + ' 条语块。看中文，开口说英文。' : '现在没有要复习的语块。新的语块会在课程和点评里出现，点星标就能加入。' }),
+      due.length ? h('button', { class: 'btn primary', onclick: () => { RV.on = true; RV.done = 0; renderChunks(); } }, '开始复习') : null));
+  }
+  // add form
+  const en = h('input', { class: 'text', placeholder: '英文语块，比如 make a decision', id: 'addEn' }), zh = h('input', { class: 'text', placeholder: '中文意思（可空）', id: 'addZh' });
+  frag.push(h('div', { class: 'section' }, h('h2', { text: '手动添加' }), h('div', { class: 'form-grid' }, en, zh),
+    h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => { if (en.value.trim()) { addChunk(en.value, zh.value, '手动添加'); renderChunks(); } } }, '加入语块本'))));
+  // list
+  const items = Object.entries(S.srs).sort((a, b) => b[1].t - a[1].t);
+  const list = h('div', { class: 'saved srs-list' });
+  for (const [id, v] of items) list.append(h('div', { class: 'saved-item' },
+    h('span', { class: 'en', text: v.en }),
+    h('span', { class: 'zh' }, [v.zh, v.src].filter(Boolean).join(' · '), h('span', { class: 'due', text: '　' + (v.due <= Date.now() ? '待复习' : ymd(new Date(v.due)) + ' 复习') })),
+    h('div', { class: 'tools' }, sayBtn(v.en), h('button', { class: 'btn ghost icon-btn', title: '删除', 'aria-label': '删除', onclick: () => { delete S.srs[id]; save(); renderChunks(); } }, ic('x')))));
+  if (!items.length) list.append(h('p', { class: 'hint', text: '还没有语块。' }));
+  frag.push(h('div', { class: 'section' }, h('h2', { text: '全部语块 · ' + items.length }), list));
+  root.replaceChildren(...frag);
+}
+
+/* ================= CHAT ================= */
+const SCEN = {
+  topic: { label: '今日话题', role: n => 'You are a friendly IELTS speaking partner. Talk with the learner about "' + LESSONS[n - 1].t + '" in the style of IELTS Part ' + LESSONS[n - 1].p + ' and Part 3 follow-ups. Ask one question at a time. Give the learner chances to use the chunk "' + LESSONS[n - 1].x + '".' },
+  research: { label: '介绍研究', role: () => 'You are a friendly professor from another university meeting the learner at a poster session at an international conference. Ask about their research topic, why it matters, their method, results so far, and next steps.' },
+  meeting: { label: '组会汇报', role: () => "You are the learner's supervisor in a weekly lab meeting held in English. Ask them to report this week's progress, then ask kind but probing follow-up questions." },
+  interview: { label: '英文面试', role: () => 'You are an interviewer for a research internship or a graduate job. Ask common interview questions one at a time.' },
+  coffee: { label: '会议茶歇', role: () => 'You are a PhD student from another country chatting with the learner during a coffee break at a conference. Keep it light.' },
+  free: { label: '自由聊天', role: () => 'You are a friendly English-speaking friend. Chat about daily life, food, hobbies and plans.' },
+};
+const CHAT = { scen: 'topic', lesson: 1, turns: [], view: [], busy: false, summary: null, started: false, err: '', draft: '' };
+function rules() {
+  const lvl = S.prefs.level === 'easy' ? 'Use simple, common words and short sentences (CEFR A2–B1).' : 'Use natural spoken English at about CEFR B2.';
+  return LEARNER + '\n\nROLE-PLAY. ' + SCEN[CHAT.scen].role(CHAT.lesson) + '\n' + lvl + ' Keep each reply to 1–3 short spoken sentences and end with one question. The learner uses speech-to-text, so ignore punctuation and capitalisation.\nAfter every learner message reply with JSON: {"reply": "your next line in English", "reply_zh": "中文翻译", "feedback": null or {"better": "a more natural English version of the learner\'s LAST message", "note_zh": "中文一句，说明主要改动"}}. feedback is null when their message was already natural or there is no learner message yet. If the learner writes Chinese, put the English way to say it in feedback.better and set note_zh to "试着把这句英文读出来再接着聊".';
+}
+function startChatOn(n) { CHAT.scen = 'topic'; CHAT.lesson = n; resetChat(); setTab('chat'); startChat(); }
+function resetChat() { CHAT.turns = []; CHAT.view = []; CHAT.summary = null; CHAT.started = false; CHAT.busy = false; CHAT.err = ''; }
+async function chatCall(userText) {
+  CHAT.busy = true; CHAT.err = ''; renderChat();
+  const msgs = [{ role: 'system', content: rules() }, ...CHAT.turns.slice(-24)];
+  if (userText == null) msgs.push({ role: 'user', content: '(Start the role-play now with a short greeting and your first question.)' });
+  try {
+    const r = await aiText('', { messages: msgs, temperature: 0.8 });
+    const reply = String(r.reply || '').trim(); if (!reply) throw new Error('AI 没给出回复，再试一次。');
+    if (userText != null && r.feedback?.better) { const last = CHAT.view[CHAT.view.length - 1]; if (last?.role === 'me') last.fb = { better: String(r.feedback.better), note: String(r.feedback.note_zh || '') }; }
+    CHAT.turns.push({ role: 'assistant', content: reply });
+    CHAT.view.push({ role: 'ai', en: reply, zh: String(r.reply_zh || '') });
+    CHAT.busy = false; renderChat();
+    if (S.prefs.autoSpeak) say(reply, $$('.msg.ai .speak-btn').pop());
+  } catch (e) { CHAT.busy = false; CHAT.err = e.message; renderChat(); }
+}
+function startChat() { CHAT.started = true; chatCall(null); }
+function sendChat(text) {
+  text = text.trim(); if (!text || CHAT.busy) return;
+  CHAT.turns.push({ role: 'user', content: text }); CHAT.view.push({ role: 'me', text }); CHAT.draft = '';
+  markDay('ch'); chatCall(text);
+}
+async function summarize() {
+  CHAT.summary = { loading: true }; renderChat();
+  try {
+    const transcriptTxt = CHAT.view.map(v => (v.role === 'ai' ? 'Partner: ' + v.en : 'Learner: ' + v.text)).join('\n');
+    CHAT.summary = await aiText(LEARNER + '\n\nPractice conversation:\n---\n' + transcriptTxt.slice(-12000) + "\n---\nReview the LEARNER's English only. JSON: {\"comment_zh\": \"中文，三句以内总评\", \"patterns\": [{\"issue_zh\": \"反复出现的问题\", \"example\": \"learner's words\", \"better\": \"corrected\"}], \"chunks\": [{\"en\": \"multi-word chunk they could have used\", \"zh\": \"...\"}]}. At most 3 patterns, exactly 4 chunks.");
+  } catch (e) { CHAT.summary = { error: e.message }; }
+  renderChat();
+}
+function renderChat() {
+  const root = $('#view-chat'); if (root.hidden) return;
+  const frag = [h('h2', { class: 'page-title', text: 'AI 对话' })];
+  const topicN = CHAT.scen === 'topic' ? CHAT.lesson : S.prefs.cur;
+  frag.push(h('div', { class: 'chat-tools' },
+    h('div', { class: 'chips' }, Object.entries(SCEN).map(([k, v]) => h('button', { class: 'chip', 'aria-pressed': String(CHAT.scen === k), onclick: () => { if (CHAT.scen === k) return; CHAT.scen = k; if (k === 'topic') CHAT.lesson = S.prefs.cur; resetChat(); renderChat(); } }, k === 'topic' ? '今日话题：' + (LESSONS[topicN - 1]?.t || '') : v.label))),
+    h('div', { class: 'row' }, seg(['easy', 'normal'], S.prefs.level, v => { S.prefs.level = v; save(); }, v => (v === 'easy' ? '简单' : '正常')),
+      h('label', { class: 'row small muted' }, h('input', { type: 'checkbox', checked: S.prefs.autoSpeak, onchange: e => { S.prefs.autoSpeak = e.target.checked; save(); } }), 'AI 的话自动朗读'),
+      h('span', { class: 'grow' }), CHAT.started ? h('button', { class: 'btn ghost', onclick: () => { resetChat(); renderChat(); } }, '重新开始') : null), needKeyNote('text')));
+  const log = h('div', { class: 'log' });
+  if (!CHAT.started) log.append(h('div', { class: 'empty' }, h('p', { text: '选一个场景，AI 先开口。你点「说」用英文回答，录音会自动转成文字，每一轮它会顺手帮你改一句。' }), h('div', { style: 'margin-top:14px' }, h('button', { class: 'btn primary', onclick: startChat }, '开始对话'))));
+  for (const v of CHAT.view) {
+    if (v.role === 'ai') { const zh = h('div', { class: 'zh', hidden: true, text: v.zh }); const sb = sayBtn(v.en); sb.classList.add('speak-btn'); log.append(h('div', { class: 'msg ai' }, h('div', { class: 'bubble', text: v.en }), h('div', { class: 'tools' }, sb, v.zh ? h('button', { class: 'btn ghost small', onclick: () => { zh.hidden = !zh.hidden; } }, '译') : null), zh)); }
+    else log.append(h('div', { class: 'msg me' }, h('div', { class: 'bubble', text: v.text }), v.fb ? h('div', { class: 'fb' }, h('div', { class: 'row' }, h('span', { class: 'better grow', text: v.fb.better }), sayBtn(v.fb.better), chunkBtn(v.fb.better, '', '对话 · ' + SCEN[CHAT.scen].label)), v.fb.note ? h('span', { class: 'small', text: v.fb.note }) : null) : null));
+  }
+  if (CHAT.busy) log.append(h('p', { class: 'thinking', text: 'AI 正在想…' }));
+  if (CHAT.err) log.append(h('p', { class: 'err', text: CHAT.err }));
+  frag.push(log);
+  if (CHAT.summary) {
+    const s = CHAT.summary, box = h('div', { class: 'result' }, h('h3', { text: '这次对话的总结' }));
+    if (s.loading) box.append(h('p', { class: 'thinking', text: 'AI 正在整理…' }));
+    else if (s.error) box.append(h('p', { class: 'err', text: s.error }));
+    else {
+      if (s.comment_zh) box.append(h('p', { text: esc(s.comment_zh) }));
+      for (const p of (s.patterns || []).slice(0, 3)) box.append(h('div', { class: 'fix' }, h('b', { text: esc(p.issue_zh) }), h('div', {}, h('s', { text: esc(p.example) }), ' → ', h('span', { text: esc(p.better) }))));
+      for (const x of (s.chunks || []).slice(0, 4)) box.append(h('div', { class: 'ex' }, sayBtn(esc(x.en)), h('span', { class: 'en', text: esc(x.en) }), chunkBtn(esc(x.en), esc(x.zh), '对话总结'), h('span', { class: 'zh', text: esc(x.zh) })));
+    }
+    frag.push(box);
+  }
+  if (CHAT.started) {
+    const ta = h('textarea', { id: 'chatInput', placeholder: '点「说」录音，或直接打字。⌘ + Enter 发送' });
+    ta.value = CHAT.draft; ta.oninput = () => { CHAT.draft = ta.value; };
+    ta.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendChat(ta.value); } });
+    const mineCount = CHAT.view.filter(v => v.role === 'me').length;
+    frag.push(h('div', { class: 'composer' }, ta, h('div', { class: 'row' },
+      micButton('chat', async blob => { CHAT.sttBusy = true; renderChat(); try { const t = await stt(blob); CHAT.draft = (CHAT.draft ? CHAT.draft + ' ' : '') + t; } catch (e) { alertBox(e.message); } CHAT.sttBusy = false; renderChat(); }),
+      CHAT.sttBusy ? h('span', { class: 'thinking', text: '转写中…' }) : null,
+      h('button', { class: 'btn primary', disabled: CHAT.busy, onclick: () => sendChat(ta.value) }, ic('send'), '发送'),
+      h('span', { class: 'grow' }),
+      h('button', { class: 'btn', disabled: mineCount < 2 || CHAT.busy, onclick: summarize }, '结束并总结'))));
+  }
+  root.replaceChildren(...frag);
+  window.scrollTo(0, document.body.scrollHeight);
+}
+
+/* ================= LOG ================= */
+function renderLog() {
+  const root = $('#view-log'); if (root.hidden) return;
+  const total = Object.keys(S.days).filter(active).length;
+  const frag = [h('h2', { class: 'page-title', text: '记录' }), h('div', { class: 'stats' },
+    h('div', { class: 'stat' }, h('b', { text: streak() }), h('span', { text: '连续天数' })),
+    h('div', { class: 'stat' }, h('b', { text: total }), h('span', { text: '累计练习天数' })),
+    h('div', { class: 'stat' }, h('b', { text: lessonsDone() + '/' + N }), h('span', { text: '完成课程' })))];
+  const weeks = 20, end = new Date(), start = new Date(); start.setDate(end.getDate() - ((end.getDay() + 6) % 7) - (weeks - 1) * 7);
+  const heat = h('div', { class: 'heat', role: 'img', 'aria-label': '最近 ' + weeks + ' 周' });
+  for (let i = 0; i < weeks * 7; i++) { const d = new Date(start); d.setDate(start.getDate() + i); const k = ymd(d); const fut = d > end; heat.append(h('i', { class: fut ? 'future' : 'l' + level(k), title: k })); }
+  frag.push(h('div', { class: 'section' }, h('h2', { text: '练习日历' }), h('div', { class: 'heat-wrap' }, heat),
+    h('div', { class: 'legend' }, '少', ...[0, 1, 2, 3].map(l => h('i', { style: 'background:var(--heat-' + l + ')' })), '多', h('span', { style: 'margin-left:10px', text: '跟读、语块、开口、对话、复习，每天做任意一项就算打卡。' }))));
+  const srsN = Object.keys(S.srs).length, mature = Object.values(S.srs).filter(v => v.ivl >= 21).length;
+  frag.push(h('div', { class: 'section' }, h('h2', { text: '语块本' }), h('p', { class: 'hint', text: '一共 ' + srsN + ' 条，其中 ' + mature + ' 条已经记牢（复习间隔超过 3 周）。' })));
+  root.replaceChildren(...frag);
+}
+
+/* ================= SETTINGS ================= */
+async function renderSettings() {
+  const root = $('#view-settings'); if (root.hidden) return;
+  try { CFG = await api('/api/config'); STATUS = await api('/api/status'); } catch (e) { root.replaceChildren(h('p', { class: 'err', text: e.message })); return; }
+  const frag = [h('h2', { class: 'page-title', text: '设置' })];
+  const tp = h('select', { id: 'textProv', onchange: async e => { CFG = await post('/api/config', { text_provider: e.target.value }); STATUS = await api('/api/status'); } },
+    ['deepseek', 'glm'].map(k => h('option', { value: k, selected: CFG.text_provider === k }, CFG.providers[k].label)));
+  frag.push(h('div', { class: 'prov' }, h('h3', { text: '文字任务用哪个模型' }), h('label', {}, '讲解、点评、对话', tp)));
+  for (const k of ['deepseek', 'glm', 'omni']) {
+    const p = CFG.providers[k];
+    const url = h('input', { value: p.base_url, id: k + '-url' }), model = h('input', { value: p.model, id: k + '-model', list: k + '-models', placeholder: '模型名' }),
+      key = h('input', { type: 'password', id: k + '-key', placeholder: p.has_key ? '已保存（' + p.api_key + '），要换就重新填' : '粘贴 API key', autocomplete: 'off' });
+    const dl = h('datalist', { id: k + '-models' });
+    const msg = h('p', { class: 'hint' });
+    const saveIt = async () => { CFG = await post('/api/config', { providers: { [k]: { base_url: url.value, model: model.value, api_key: key.value } } }); key.value = ''; STATUS = await api('/api/status'); };
+    frag.push(h('div', { class: 'prov' },
+      h('h3', {}, h('span', { class: p.has_key && p.model ? 'ok-dot' : 'no-dot' }), p.label),
+      k === 'omni' ? h('p', { class: 'hint', text: '用来「听」你的录音、点评发音。在阿里云百炼开通后创建 API key；模型推荐 qwen3.8-omni-flash。接口地址如果报错，换成百炼控制台里你工作空间的地址。' }) : null,
+      k === 'glm' ? h('p', { class: 'hint', text: '模型名填你在智谱开放平台能用的那个（可以先保存 key，再点「获取模型列表」挑）。' }) : null,
+      h('label', {}, '接口地址', url), h('label', {}, '模型', model, dl), h('label', {}, 'API key（只存在这台电脑的 config.json 里）', key),
+      h('div', { class: 'row' },
+        h('button', { class: 'btn primary', onclick: async () => { try { await saveIt(); msg.textContent = '已保存。'; renderSettings(); } catch (e) { msg.textContent = e.message; } } }, '保存'),
+        h('button', { class: 'btn', onclick: async () => { msg.textContent = '测试中…'; try { await saveIt(); const r = await post('/api/config/test', { provider: k }); msg.textContent = '连接成功，模型回复：' + r.reply; } catch (e) { msg.textContent = e.message; } } }, '测试连接'),
+        h('button', { class: 'btn ghost', onclick: async () => { msg.textContent = '获取中…'; try { await saveIt(); const r = await post('/api/config/models', { provider: k }); dl.replaceChildren(...r.models.map(m => h('option', { value: m }))); msg.textContent = '共 ' + r.models.length + ' 个模型，点模型输入框可以选。'; } catch (e) { msg.textContent = e.message; } } }, '获取模型列表')),
+      msg));
+  }
+  // whisper / transcripts
+  const pct = STATUS.lessons ? Math.round(STATUS.ielts_transcribed / STATUS.lessons * 100) : 0;
+  frag.push(h('div', { class: 'prov' }, h('h3', { text: '本地 Whisper 字幕' }),
+    h('p', { class: 'hint', text: 'IELTSCast 已生成 ' + STATUS.ielts_transcribed + ' / ' + STATUS.lessons + ' 集逐句字幕；队列里还有 ' + STATUS.queue + ' 个。' + (STATUS.whisper?.error ? ' 最近的错误：' + STATUS.whisper.error : '') }),
+    h('div', { class: 'progress' }, h('i', { style: 'width:' + pct + '%' })),
+    h('div', { class: 'row' }, h('button', { class: 'btn', onclick: async () => { const r = await post('/api/transcribe_all', {}); alertBox('已加入 ' + r.queued + ' 个文件，后台慢慢转写。'); renderSettings(); } }, '把全部课程音频加入转写队列'))));
+  // voice
+  const vsel = h('select', { id: 'voiceSel', onchange: e => { S.prefs.voice = e.target.value; save(); } }, h('option', { value: '' }, '自动选择'), VOICES.map(v => h('option', { value: v.voiceURI, selected: v.voiceURI === S.prefs.voice }, v.name + ' (' + v.lang + ')')));
+  const rv = h('span', { class: 'mono', text: S.prefs.ttsRate.toFixed(2) + '×' });
+  frag.push(h('div', { class: 'prov' }, h('h3', { text: '朗读声音' }), h('label', {}, 'AI 文字的朗读声音（来自 macOS）', vsel),
+    h('label', {}, h('span', {}, '朗读速度 ', rv), h('input', { type: 'range', min: 0.6, max: 1.2, step: 0.05, value: S.prefs.ttsRate, oninput: e => { S.prefs.ttsRate = +e.target.value; rv.textContent = (+e.target.value).toFixed(2) + '×'; }, onchange: save })),
+    h('div', { class: 'row' }, h('button', { class: 'btn', onclick: e => say("Hi! This is how I sound. Let's practise speaking every day.", e.currentTarget) }, ic('speak'), '试听')),
+    h('p', { class: 'hint', text: '想要更自然的声音：系统设置 › 辅助功能 › 朗读内容 › 系统声音 › 管理声音，下载英语的「Ava（高级）」或「Zoe（高级）」，然后回来选它。' })));
+  root.replaceChildren(...frag);
+}
+
+/* ================= boot ================= */
+(async function boot() {
+  try {
+    const [ls, st] = await Promise.all([api('/api/lessons'), api('/api/status')]);
+    LESSONS = ls.lessons; N = LESSONS.length; STATUS = st;
+    await api('/api/state').then(d => { for (const k of ['days', 'lessons', 'srs', 'cards']) if (d[k]) S[k] = d[k]; Object.assign(S.prefs, d.prefs || {}); }).catch(() => {});
+  } catch (e) { $('#view-today').replaceChildren(h('p', { class: 'err', text: e.message })); return; }
+  if (!S.prefs.cur || S.prefs.cur > N) S.prefs.cur = 1;
+  CHAT.lesson = S.prefs.cur;
+  renderHeader(); updateBadge();
+  setTab((location.hash || '#today').slice(1));
+  setInterval(updateBadge, 60000);
+})();
