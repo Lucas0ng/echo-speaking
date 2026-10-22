@@ -11,6 +11,7 @@ import io
 import json
 import queue
 import re
+import secrets
 import threading
 import time
 import wave
@@ -26,7 +27,8 @@ from fastapi.staticfiles import StaticFiles
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
 TRANS = DATA / "transcripts"
-for d in (DATA, TRANS):
+RECS = DATA / "recordings"
+for d in (DATA, TRANS, RECS):
     d.mkdir(parents=True, exist_ok=True)
 CFG_PATH = ROOT / "config.json"
 STATE_PATH = DATA / "progress.json"
@@ -229,6 +231,116 @@ def to_sentences(result: dict) -> list[dict]:
     return out
 
 
+# ---------------------------------------------------------------- fluency metrics
+FILLERS = {"um", "umm", "uh", "uhh", "uhm", "erm", "er", "err", "hmm", "hm", "mm", "mmm", "ah", "eh"}
+PAUSE = 0.25  # s; silent-pause threshold common in L2 fluency research (de Jong & Bosker 2013)
+# Whisper drops disfluencies unless the prompt itself contains them.
+FILLER_PROMPT = "Umm, let me think, like, hmm... Okay, uh, so here's what I'm, um, thinking."
+
+
+def word_list(result: dict) -> list[list]:
+    out = []
+    for seg in result.get("segments", []):
+        for w in seg.get("words", []) or []:
+            if w.get("word", "").strip():
+                out.append([w["word"].strip(), round(float(w["start"]), 2), round(float(w["end"]), 2)])
+    return out
+
+
+def fluency(words: list[list]) -> dict:
+    """Speech rate, fillers per 100 words and mean length of run, all from Whisper word timestamps.
+
+    Speech rate counts words without fillers over the span from first to last word (pauses included).
+    A run is a stretch of words not broken by a silent pause >= PAUSE or a filler.
+    """
+    toks = [(re.sub(r"[^a-z0-9']", "", w.lower()), s, e) for w, s, e in words]
+    toks = [t for t in toks if t[0]]
+    n_fill = sum(1 for t in toks if t[0] in FILLERS)
+    real = len(toks) - n_fill
+    span = toks[-1][2] - toks[0][1] if toks else 0.0
+    runs, cur, pauses, prev = [], 0, 0, None
+    for w, s, e in toks:
+        if prev is not None and s - prev >= PAUSE:
+            pauses += 1
+            if cur:
+                runs.append(cur)
+                cur = 0
+        if w in FILLERS:
+            if cur:
+                runs.append(cur)
+                cur = 0
+        else:
+            cur += 1
+        prev = e
+    if cur:
+        runs.append(cur)
+    return {
+        "words": real,
+        "fillers": n_fill,
+        "pauses": pauses,
+        "span": round(span, 1),
+        "wpm": round(real / span * 60, 1) if span > 0 else 0,
+        "fillers_per100": round(n_fill / real * 100, 1) if real else 0,
+        "pauses_per100": round(pauses / real * 100, 1) if real else 0,
+        "mlr": round(real / len(runs), 1) if runs else 0,
+        "reliable": real >= 20 and span >= 10,
+    }
+
+
+# ---------------------------------------------------------------- recordings archive
+CURVE_KINDS = {"talk", "baseline", "r432"}  # free monologues: the only kinds whose metrics go on the curves
+KINDS = CURVE_KINDS | {"chat", "shadow", "chunk", "review"}
+REC_INDEX: dict[str, dict] = {}
+
+
+def rec_summary(d: dict) -> dict:
+    return {k: v for k, v in d.items() if k != "words"}
+
+
+def load_recordings() -> None:
+    for p in RECS.glob("*.json"):
+        try:
+            d = json.loads(p.read_text("utf-8"))
+            REC_INDEX[d["id"]] = rec_summary(d)
+        except Exception:
+            continue
+
+
+def save_recording(raw: bytes, filename: str, samples: np.ndarray, res: dict, text: str, kind: str, line: str, meta: dict) -> dict:
+    rid = time.strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(2)
+    suf = Path(filename or "").suffix.lower()
+    ext = suf if suf in (".webm", ".m4a", ".ogg", ".wav") else ".webm"
+    (RECS / (rid + ext)).write_bytes(raw)
+    words = word_list(res)
+    d = {
+        "id": rid,
+        "t": int(time.time() * 1000),
+        "date": time.strftime("%Y-%m-%d"),
+        "kind": kind,
+        "line": line,
+        "meta": meta,
+        "audio": rid + ext,
+        "duration": round(len(samples) / SR, 1),
+        "text": text,
+        "metrics": fluency(words),
+        "words": words,
+    }
+    tmp = RECS / (rid + ".tmp")
+    tmp.write_text(json.dumps(d, ensure_ascii=False), "utf-8")
+    tmp.replace(RECS / (rid + ".json"))
+    REC_INDEX[rid] = rec_summary(d)
+    return d
+
+
+def rec_path(rid: str, suffix: str) -> Path:
+    if not re.fullmatch(r"[\w-]+", rid) or rid not in REC_INDEX:
+        raise HTTPException(404, "找不到这条录音")
+    return RECS / (REC_INDEX[rid]["audio"] if suffix == "audio" else rid + ".json")
+
+
+load_recordings()
+
+
 def tpath(rel: str) -> Path:
     key = re.sub(r"[^\w\-.]+", "_", rel)[-180:]
     return TRANS / f"{key}.json"
@@ -429,7 +541,8 @@ def api_transcribe_all():
 
 
 @app.post("/api/stt")
-async def api_stt(audio: UploadFile = File(...), ref: str = Form("")):
+async def api_stt(audio: UploadFile = File(...), ref: str = Form(""), kind: str = Form(""), line: str = Form("daily"), meta: str = Form("{}")):
+    """Speech to text. With `kind`, the recording is archived with word timestamps and fluency metrics."""
     mark_active()
     raw = await audio.read()
     try:
@@ -438,8 +551,38 @@ async def api_stt(audio: UploadFile = File(...), ref: str = Form("")):
         raise HTTPException(400, "这段录音解不开，再录一次试试。")
     if len(samples) < SR * 0.3:
         return {"text": ""}
-    res = await run_blocking(lambda: whisper_run(samples, words=False, prompt=(ref[:200] or None)))
-    return {"text": " ".join(s["text"].strip() for s in res.get("segments", [])).strip()}
+    if kind and kind not in KINDS:
+        raise HTTPException(400, "未知的录音类型")
+    prompt = ref[:200] or (FILLER_PROMPT if kind in CURVE_KINDS else None)
+    res = await run_blocking(lambda: whisper_run(samples, words=bool(kind), prompt=prompt))
+    text = " ".join(s["text"].strip() for s in res.get("segments", [])).strip()
+    if not kind:
+        return {"text": text}
+    try:
+        m = json.loads(meta) if len(meta) < 4000 else {}
+    except Exception:
+        m = {}
+    rec = save_recording(raw, audio.filename, samples, res, text, kind, "academic" if line == "academic" else "daily", m if isinstance(m, dict) else {})
+    return {"text": text, "id": rec["id"], "metrics": rec["metrics"], "duration": rec["duration"]}
+
+
+@app.get("/api/recordings")
+def api_recordings(kinds: str = "", line: str = ""):
+    ks = set(filter(None, kinds.split(",")))
+    out = [r for r in REC_INDEX.values() if (not ks or r["kind"] in ks) and (not line or r["line"] == line)]
+    return {"recordings": sorted(out, key=lambda r: r["t"], reverse=True)}
+
+
+@app.get("/api/recordings/{rid}")
+def api_recording(rid: str):
+    return json.loads(rec_path(rid, "json").read_text("utf-8"))
+
+
+@app.get("/api/recordings/{rid}/audio")
+def api_recording_audio(rid: str):
+    p = rec_path(rid, "audio")
+    mt = {".m4a": "audio/mp4", ".ogg": "audio/ogg", ".wav": "audio/wav"}.get(p.suffix, "audio/webm")
+    return FileResponse(p, media_type=mt)
 
 
 async def run_blocking(fn):
