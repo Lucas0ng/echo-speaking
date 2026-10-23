@@ -1736,20 +1736,58 @@ async function summarize() {
   catch (e) { CHAT.summary = { error: e.message }; }
   renderChat();
 }
+let chatHelpBusy = false;
 function renderChat() {
   const root = $('#view-chat'); if (root.hidden) return;
   const frag = [h('h2', { class: 'page-title', text: 'AI 对话' })];
   const topicN = CHAT.scen === 'topic' ? CHAT.lesson : S.prefs.cur;
-  frag.push(h('div', { class: 'chat-tools' },
-    h('div', { class: 'chips' }, Object.entries(SCEN).map(([k, v]) => h('button', { class: 'chip', 'aria-pressed': String(CHAT.scen === k), onclick: () => { if (CHAT.scen === k) return; CHAT.scen = k; if (k === 'topic') CHAT.lesson = S.prefs.cur; resetChat(); renderChat(); } }, k === 'topic' ? '今日话题：' + (LESSONS[topicN - 1]?.t || '') : v.label))),
-    h('div', { class: 'row' }, seg(['easy', 'normal'], S.prefs.level, v => { S.prefs.level = v; save(); }, v => (v === 'easy' ? '简单' : '正常')),
-      h('label', { class: 'row small muted' }, h('input', { type: 'checkbox', checked: S.prefs.autoSpeak, onchange: e => { S.prefs.autoSpeak = e.target.checked; save(); } }), 'AI 的话自动朗读'),
-      h('span', { class: 'grow' }), CHAT.started ? h('button', { class: 'btn ghost', onclick: () => { resetChat(); renderChat(); } }, '重新开始') : null), needKeyNote('text')));
+  const fix = S.prefs.chatFix || 'end';
+  const fixLabel = v => (v === 'end' ? '不打断' : '每轮改一句');
+  const sceneChip = (k, v) => h('button', { class: 'chip', 'aria-pressed': String(CHAT.scen === k), onclick: () => { if (CHAT.scen === k) return; CHAT.scen = k; if (k === 'topic') CHAT.lesson = S.prefs.cur; resetChat(); renderChat(); } }, k === 'topic' ? '今日话题：' + (LESSONS[topicN - 1]?.t || '') : v.label);
+  const sceneGroup = (label, list) => h('div', { class: 'chips' }, h('span', { class: 'chat-group', text: label }), list.map(([k, v]) => sceneChip(k, v)));
+  const tools = h('div', { class: 'chat-tools' },
+    sceneGroup('学习和工作', Object.entries(SCEN).filter(([, v]) => !v.daily)),
+    sceneGroup('日常生活', Object.entries(SCEN).filter(([, v]) => v.daily)));
+  if (CHAT.task) tools.append(h('div', { class: 'chat-task' }, h('div', { class: 'row' },
+    h('span', { class: 'grow' }, h('b', { text: '你的任务：' }), CHAT.task[0]),
+    CHAT.started ? null : h('button', { class: 'btn ghost small', onclick: () => { CHAT.task = chatTask(CHAT.scen); renderChat(); } }, '换一个任务'))));
+  if (!CHAT.started && !CHAT.chunks.length) CHAT.chunks = recentChunks();
+  if (CHAT.chunks.length) {
+    const mineText = CHAT.view.filter(v => v.role === 'me').map(v => v.text).join(' ');
+    tools.append(h('div', { class: 'chat-chunks' }, h('span', { class: 'hint', text: '试着用上：' }),
+      CHAT.chunks.map(c => { const used = chunkUsed(c.en, mineText); return h('span', { class: used ? 'chip-lite used' : 'chip-lite', text: (used ? '✓ ' : '') + c.en }); })));
+  }
+  put(tools, h('div', { class: 'row' }, seg(['easy', 'normal'], S.prefs.level, v => { S.prefs.level = v; save(); }, v => (v === 'easy' ? '简单' : '正常')),
+    CHAT.started
+      ? h('span', { class: 'tag', text: '反馈：' + fixLabel(fix) })
+      : seg(['end', 'each'], fix, v => { S.prefs.chatFix = v; save(); renderChat(); }, fixLabel),
+    h('label', { class: 'row small muted' }, h('input', { type: 'checkbox', checked: S.prefs.autoSpeak, onchange: e => { S.prefs.autoSpeak = e.target.checked; save(); } }), 'AI 的话自动朗读'),
+    h('span', { class: 'grow' }), CHAT.started ? h('button', { class: 'btn ghost', onclick: () => { resetChat(); renderChat(); } }, '重新开始') : null), needKeyNote('text'));
+  frag.push(tools);
   const log = h('div', { class: 'log' });
-  if (!CHAT.started) log.append(h('div', { class: 'empty' }, h('p', { text: '选一个场景，AI 先开口。你点「说」用英文回答，录音会自动转成文字，每一轮它会顺手帮你改一句。' }), h('div', { style: 'margin-top:14px' }, h('button', { class: 'btn primary', onclick: startChat }, '开始对话'))));
+  if (!CHAT.started) log.append(h('div', { class: 'empty' }, h('p', { text: fix === 'end'
+    ? '选一个场景，AI 先开口。对话中 AI 不改你的错，只有真听不懂时才会追问——那时换个说法让它听懂。卡住了点「求助」。结束后点「结束并总结」统一看哪里该改。'
+    : '选一个场景，AI 先开口。你点「说」用英文回答，录音会自动转成文字，每一轮它会顺手帮你改一句。' }), h('div', { style: 'margin-top:14px' }, h('button', { class: 'btn primary', onclick: startChat }, '开始对话'))));
+  const lastMe = [...CHAT.view].reverse().find(x => x.role === 'me');
   for (const v of CHAT.view) {
     if (v.role === 'ai') { const zh = h('div', { class: 'zh', hidden: true, text: v.zh }); const sb = sayBtn(v.en); sb.classList.add('speak-btn'); log.append(h('div', { class: 'msg ai' }, h('div', { class: 'bubble' }, wordify(v.en, { src: '对话' })), h('div', { class: 'tools' }, sb, v.zh ? h('button', { class: 'btn ghost small', onclick: () => { zh.hidden = !zh.hidden; } }, '译') : null), zh)); }
-    else log.append(h('div', { class: 'msg me' }, h('div', { class: 'bubble' }, wordify(v.text, { mine: true, src: '对话' })), v.fb ? h('div', { class: 'fb' }, h('div', { class: 'row' }, h('span', { class: 'better grow', text: v.fb.better }), sayBtn(v.fb.better), chunkBtn(v.fb.better, '', '对话 · ' + SCEN[CHAT.scen].label)), v.fb.note ? h('span', { class: 'small', text: v.fb.note }) : null) : null));
+    else {
+      let help = null;
+      if (fix === 'end' && v === lastMe && !v.fb && !CHAT.busy) {
+        help = h('button', { class: 'btn ghost small', disabled: chatHelpBusy }, chatHelpBusy ? '在想…' : '求助：这句怎么说');
+        help.onclick = async () => {
+          if (chatHelpBusy) return;
+          chatHelpBusy = true; help.disabled = true; help.textContent = '在想…';
+          try { await chatHelp(v); } catch (e) { alertBox(e.message); }
+          chatHelpBusy = false; renderChat();
+        };
+      }
+      log.append(h('div', { class: 'msg me' }, h('div', { class: 'bubble' }, wordify(v.text, { mine: true, src: '对话' })),
+        v.unclear ? h('div', { class: 'chat-flag unclear', text: '对方没听懂，换个说法再说一次' }) : null,
+        v.repair ? h('div', { class: 'chat-flag repair', text: '✓ 换了个说法，对方听懂了' }) : null,
+        help,
+        v.fb ? h('div', { class: 'fb' }, v.help ? h('div', {}, h('span', { class: 'tag', text: '求助' })) : null, h('div', { class: 'row' }, h('span', { class: 'better grow', text: v.fb.better }), sayBtn(v.fb.better), chunkBtn(v.fb.better, '', '对话 · ' + SCEN[CHAT.scen].label)), v.fb.note ? h('span', { class: 'small', text: v.fb.note }) : null) : null));
+    }
   }
   if (CHAT.busy) log.append(h('p', { class: 'thinking', text: 'AI 正在想…' }));
   if (CHAT.err) log.append(h('p', { class: 'err', text: CHAT.err }));
@@ -1760,8 +1798,23 @@ function renderChat() {
     else if (s.error) box.append(h('p', { class: 'err', text: s.error }));
     else {
       if (s.comment_zh) box.append(h('p', { text: esc(s.comment_zh) }));
+      const st = s.stats;
+      if (st) box.append(h('p', { class: 'hint', text: fix === 'end'
+        ? '你说了 ' + st.msgs + ' 句；对方没听懂 ' + st.unclear + ' 次，你换说法后 ' + st.repair + ' 次让它听懂；求助 ' + st.help + ' 次。'
+        : '你说了 ' + st.msgs + ' 句。' }));
+      const fixes = (s.fixes || []).slice(0, 5);
+      if (fixes.length) {
+        box.append(h('h3', { text: '最该改的句子' }));
+        for (const f of fixes) box.append(h('div', { class: 'fix' },
+          h('div', { class: 'row' }, h('s', { text: esc(f.said) }), ' → ', h('b', { class: 'grow', text: esc(f.better) }), sayBtn(esc(f.better))),
+          f.why_zh ? h('div', { class: 'hint', text: esc(f.why_zh) }) : null));
+      }
       for (const p of (s.patterns || []).slice(0, 3)) box.append(h('div', { class: 'fix' }, h('b', { text: esc(p.issue_zh) }), h('div', {}, h('s', { text: esc(p.example) }), ' → ', h('span', { text: esc(p.better) }))));
       for (const x of (s.chunks || []).slice(0, 4)) box.append(h('div', { class: 'ex' }, sayBtn(esc(x.en)), h('span', { class: 'en', text: esc(x.en) }), chunkBtn(esc(x.en), esc(x.zh), '对话总结'), h('span', { class: 'zh', text: esc(x.zh) })));
+      const used = Array.isArray(s.used) ? s.used : [];
+      if (used.length) box.append(h('div', { class: 'chat-chunks' }, h('span', { class: 'hint', text: '用上了：' }), used.map(en => h('span', { class: 'chip-lite used', text: '✓ ' + en }))));
+      else if ((CHAT.chunks || []).length) box.append(h('p', { class: 'hint', text: '这次没用上最近学的语块。' }));
+      put(box, gapNotice(s.cards));
       const errN = errNotice(s.errKeys); if (errN) box.append(errN);
     }
     frag.push(box);
