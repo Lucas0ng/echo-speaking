@@ -14,18 +14,20 @@ function dictLookup(w) {
   if (!DICT.has(k)) DICT.set(k, api('/api/dict?w=' + encodeURIComponent(k)).then(j => (j?.found ? j : null)).catch(e => { DICT.delete(k); throw e; }));
   return DICT.get(k);
 }
-/* What the word means in this very sentence, plus collocations worth saying. Cached per word + sentence. */
-function wordSense(w, sentence, entry) {
+/* What the word means in this very sentence, plus collocations worth saying. Asked only when the learner wants it;
+   the answer is kept on disk per word + sentence, so it is never paid for twice.
+   cacheOnly: resolve null instead of asking the AI when there is no saved answer. */
+function wordSense(w, sentence, { cacheOnly = false } = {}) {
   const id = wordKey(w) + '\n' + sentence;
   if (!SENSE.has(id)) {
-    const senses = [...(entry?.zh || []), ...(entry?.lemma?.zh || [])].slice(0, 6).join('; ');
-    SENSE.set(id, aiText(LEARNER + '\n\nThe learner clicked the word "' + w + '" in this sentence:\n"' + sentence + '"\n' + (senses ? 'Dictionary senses: ' + senses + '\n' : '')
+    const p = aiText(LEARNER + '\n\nThe learner clicked the word "' + w + '" in this sentence:\n"' + sentence + '"\n'
       + 'JSON: {"sense_zh": "它在这句里的意思（中文，12 字以内）", "pos": "its part of speech here, e.g. verb", '
       + '"collocations": [{"en": "a common collocation with this word, 2–4 words", "zh": "..."}], '
-      + '"note_zh": "如果这句里这个词用得不自然或用错了，中文一句指出并给出更好的说法；用得对就空字符串"} with exactly 3 collocations, the most useful ones for everyday or academic speaking.')
-      .then(j => ({ sense: String(j?.sense_zh || ''), pos: String(j?.pos || ''), note: String(j?.note_zh || ''),
+      + '"note_zh": "如果这句里这个词用得不自然或用错了，中文一句指出并给出更好的说法；用得对就空字符串"} with exactly 3 collocations, the most useful ones for everyday or academic speaking.', { think: false, cache: !cacheOnly, cacheOnly })
+      .then(j => (j === undefined ? null : { sense: String(j?.sense_zh || ''), pos: String(j?.pos || ''), note: String(j?.note_zh || ''),
         colls: (j?.collocations || []).filter(c => c?.en).slice(0, 3).map(c => ({ en: String(c.en), zh: String(c.zh || '') })) }))
-      .catch(e => { SENSE.delete(id); throw e; }));
+      .then(r => { if (!r) SENSE.delete(id); return r; }, e => { SENSE.delete(id); throw e; });
+    SENSE.set(id, p);
   }
   return SENSE.get(id);
 }

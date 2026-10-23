@@ -48,8 +48,11 @@ async function api(path, opts = {}) {
 }
 const post = (p, body) => api(p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 const extOf = b => (/mp4|m4a|aac/.test(b.type) ? '.m4a' : /ogg/.test(b.type) ? '.ogg' : '.webm');
-async function aiText(prompt, { json = true, messages = null, temperature } = {}) {
-  const j = await post('/api/ai/text', { json, messages: messages || [{ role: 'user', content: prompt }], temperature });
+/* think: false turns off DeepSeek's hidden reasoning for short fixed-format tasks (cheaper, faster).
+   cache: answers are kept on disk and never paid for twice; cacheOnly: resolve undefined unless already cached. */
+async function aiText(prompt, { json = true, messages = null, temperature, think, cache, cacheOnly } = {}) {
+  const j = await post('/api/ai/text', { json, messages: messages || [{ role: 'user', content: prompt }], temperature, think, cache, cache_only: cacheOnly });
+  if (j.miss) return undefined;
   return json ? j.json : j.text;
 }
 async function aiAudio(blob, prompt) {
@@ -589,7 +592,7 @@ async function buildStep2(panel, n, L, rec, st) {
     const b = h('button', { class: 'btn', disabled: !!st.busy.card, onclick: async () => {
       st.busy.card = true; b.disabled = true; out.replaceChildren(h('p', { class: 'thinking', text: 'AI 正在写讲解' }));
       try {
-        const c = await aiText(LEARNER + '\n\nExplain the English chunk "' + L.x + '" (topic of a BBC Learning English "The English We Speak" episode). Write your own examples.\nJSON: {"meaning_zh": "意思（中文，一句话）", "register": "informal" | "neutral" | "slang" | "formal", "note_zh": "什么时候用、什么时候别用（中文，一两句）", "examples": [{"en": "...", "zh": "..."}]} with exactly 3 examples: one about study or research life, one about daily life, one short reply in a conversation.');
+        const c = await aiText(LEARNER + '\n\nExplain the English chunk "' + L.x + '" (topic of a BBC Learning English "The English We Speak" episode). Write your own examples.\nJSON: {"meaning_zh": "意思（中文，一句话）", "register": "informal" | "neutral" | "slang" | "formal", "note_zh": "什么时候用、什么时候别用（中文，一两句）", "examples": [{"en": "...", "zh": "..."}]} with exactly 3 examples: one about study or research life, one about daily life, one short reply in a conversation.', { think: false });
         if (!c?.meaning_zh || !Array.isArray(c.examples)) throw new Error('AI 返回的格式不对，再试一次。');
         S.cards[n] = { meaning_zh: String(c.meaning_zh), register: String(c.register || ''), note_zh: String(c.note_zh || ''), examples: c.examples.slice(0, 3).map(e => ({ en: String(e.en || ''), zh: String(e.zh || '') })) };
         addChunk(L.x, S.cards[n].meaning_zh, 'BBC The English We Speak');
@@ -606,7 +609,7 @@ async function buildStep2(panel, n, L, rec, st) {
     const s = ta.value.trim(); if (!s) { ta.focus(); return; }
     cb.disabled = true; chk.replaceChildren(h('p', { class: 'thinking', text: 'AI 正在看' }));
     try {
-      const r = await aiText(LEARNER + '\n\nThe learner tried to use the chunk "' + L.x + '"' + (card ? ' (meaning: ' + card.meaning_zh + ')' : '') + ' in this sentence (from speech-to-text; ignore punctuation):\n"' + s + '"\nJSON: {"ok": true or false, "better": "a corrected, more natural version that still uses the chunk", "note_zh": "中文点评，一两句"}');
+      const r = await aiText(LEARNER + '\n\nThe learner tried to use the chunk "' + L.x + '"' + (card ? ' (meaning: ' + card.meaning_zh + ')' : '') + ' in this sentence (from speech-to-text; ignore punctuation):\n"' + s + '"\nJSON: {"ok": true or false, "better": "a corrected, more natural version that still uses the chunk", "note_zh": "中文点评，一两句"}', { think: false });
       st.check = { ok: !!r.ok, better: String(r.better || ''), note: String(r.note_zh || '') };
       markLesson(n, 'ph'); renderToday();
     } catch (e) { cb.disabled = false; chk.replaceChildren(h('p', { class: 'err', text: e.message })); }
@@ -750,7 +753,7 @@ function openWordCard(el) {
   const phon = h('span', { class: 'wordpop-phon' });
   const meta = h('div', { class: 'wordpop-meta' });
   const dict = h('div', { class: 'wordpop-dict' }, h('p', { class: 'thinking', text: '查词…' }));
-  const senseBox = h('div', { class: 'wordpop-sense' }, h('p', { class: 'thinking', text: 'AI 在看这句…' }));
+  const senseBox = h('div', { class: 'wordpop-sense' });
   let entry = null, senseNow = '';
   const addBtn = h('button', { class: 'btn' });
   const paintAdd = () => {
@@ -798,11 +801,15 @@ function openWordCard(el) {
     positionWordPop();
   };
 
-  async function loadSense() {
-    senseBox.replaceChildren(h('p', { class: 'thinking', text: 'AI 在看这句…' }));
+  const askBtn = () => h('div', { class: 'row' },
+    h('button', { class: 'btn', onclick: () => loadSense() }, 'AI：这句里的意思和搭配'),
+    h('span', { class: 'hint', text: '约 ¥0.001，问过的会存下来' }));
+  async function loadSense(cacheOnly = false) {
+    if (!cacheOnly) senseBox.replaceChildren(h('p', { class: 'thinking', text: 'AI 在看这句…' }));
     try {
-      const r = await wordSense(word, sentence, entry);
+      const r = await wordSense(word, sentence, { cacheOnly });
       if (tok !== WPTOK) return;
+      if (!r) { senseBox.replaceChildren(askBtn()); positionWordPop(); return; } // not asked before: wait for the button
       senseNow = r.sense || '';
       const kids = [];
       if (r.sense || r.pos) kids.push(h('p', { class: 'wordpop-gloss' }, r.sense ? h('b', { text: r.sense }) : null, r.pos ? h('span', { class: 'small muted', text: ' ' + r.pos }) : null));
@@ -813,7 +820,7 @@ function openWordCard(el) {
       senseBox.replaceChildren(...kids);
     } catch (e) {
       if (tok !== WPTOK) return;
-      senseBox.replaceChildren(h('p', { class: 'err' }, e.message, ' ', h('button', { class: 'btn ghost', onclick: loadSense }, '重试')));
+      senseBox.replaceChildren(h('p', { class: 'err' }, e.message, ' ', h('button', { class: 'btn ghost', onclick: () => loadSense() }, '重试')));
     }
     positionWordPop();
   }
@@ -828,7 +835,7 @@ function openWordCard(el) {
     dict.replaceChildren(h('p', { class: 'err', text: e.message }));
     positionWordPop();
   });
-  loadSense();
+  loadSense(true); // free: shows a saved answer if this word in this sentence was asked before
 
   return box;
 }
@@ -839,7 +846,8 @@ document.addEventListener('click', e => {
     openWordCard(w);
     return;
   }
-  if (WPOP && !WPOP.contains(e.target)) closeWordCard();
+  // composedPath is fixed at dispatch: a button inside the card that removed itself on click still counts as inside
+  if (WPOP && !e.composedPath().includes(WPOP)) closeWordCard();
 });
 
 /* ================= CHUNKS (语块本) ================= */
@@ -1083,7 +1091,7 @@ async function chatCall(userText) {
   const msgs = [{ role: 'system', content: rules() }, ...CHAT.turns.slice(-24)];
   if (userText == null) msgs.push({ role: 'user', content: '(Start the role-play now with a short greeting and your first question.)' });
   try {
-    const r = await aiText('', { messages: msgs, temperature: 0.8 });
+    const r = await aiText('', { messages: msgs, temperature: 0.8, think: false });
     const reply = String(r.reply || '').trim(); if (!reply) throw new Error('AI 没给出回复，再试一次。');
     if (userText != null && r.feedback?.better) { const last = CHAT.view[CHAT.view.length - 1]; if (last?.role === 'me') last.fb = { better: String(r.feedback.better), note: String(r.feedback.note_zh || '') }; }
     CHAT.turns.push({ role: 'assistant', content: reply });

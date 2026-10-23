@@ -58,7 +58,7 @@ async function errDrills(e) {
   if (e.drills?.length) return e.drills;
   const ex = e.seen.slice(-3).map(s => '"' + s.said + '" → "' + s.better + '"').join('\n');
   const j = await aiText(LEARNER + '\n\nThe learner keeps making this error: ' + e.title_zh + ' (' + e.cat + '). Rule: ' + e.rule_zh + '\nWhat they said:\n' + ex
-    + '\nWrite 4 short Chinese prompts (two about daily life, two about study or research life) whose natural English translation needs this exact pattern, so saying it aloud tests whether the error is fixed. Use different words from the examples. Each English answer under 15 words.\nJSON: {"drills": [{"zh": "...", "en": "..."}]}');
+    + '\nWrite 4 short Chinese prompts (two about daily life, two about study or research life) whose natural English translation needs this exact pattern, so saying it aloud tests whether the error is fixed. Use different words from the examples. Each English answer under 15 words.\nJSON: {"drills": [{"zh": "...", "en": "..."}]}', { think: false });
   e.drills = (j?.drills || []).filter(d => d?.zh && d?.en).slice(0, 4).map(d => ({ zh: String(d.zh), en: String(d.en) }));
   if (!e.drills.length) throw new Error('AI 没出好练习题，再试一次。');
   save(); return e.drills;

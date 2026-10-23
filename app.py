@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import base64
 import csv
+import hashlib
 import io
 import json
 import queue
@@ -30,7 +31,8 @@ ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
 TRANS = DATA / "transcripts"
 RECS = DATA / "recordings"
-for d in (DATA, TRANS, RECS):
+AI_CACHE = DATA / "ai_cache"
+for d in (DATA, TRANS, RECS, AI_CACHE):
     d.mkdir(parents=True, exist_ok=True)
 CFG_PATH = ROOT / "config.json"
 STATE_PATH = DATA / "progress.json"
@@ -664,9 +666,12 @@ def extract_json(text: str):
     raise HTTPException(502, "AI 返回的格式不对，再试一次。")
 
 
-async def chat_completion(p: dict, messages: list, want_json: bool, stream: bool = False, temperature: float = 0.6) -> str:
+async def chat_completion(p: dict, messages: list, want_json: bool, stream: bool = False, temperature: float = 0.6, think: bool = True) -> str:
     url = p["base_url"].rstrip("/") + "/chat/completions"
     body = {"model": p["model"], "messages": messages, "temperature": temperature}
+    if not think and "deepseek" in p["base_url"]:
+        # DeepSeek thinks by default; for short fixed-format tasks the hidden reasoning costs several times the answer
+        body["thinking"] = {"type": "disabled"}
     if stream:
         body["stream"] = True
         body["stream_options"] = {"include_usage": True}
@@ -819,7 +824,18 @@ async def api_ai_text(req: Request):
             msgs = [{"role": "system", "content": msgs[0]["content"] + "\n\n" + note}] + msgs[1:]
         else:
             msgs = [{"role": "system", "content": note}] + msgs
-    text = await chat_completion(p, msgs, want_json, temperature=float(body.get("temperature", 0.6)))
+    think = body.get("think", True) is not False
+    # cache: same model + prompt → same answer from disk, no second charge. cache_only: answer only if cached.
+    key = hashlib.sha256(json.dumps([p["model"], msgs, want_json, think], ensure_ascii=False).encode()).hexdigest()[:32]
+    cpath = AI_CACHE / (key + ".json")
+    if (body.get("cache") or body.get("cache_only")) and cpath.exists():
+        text = json.loads(cpath.read_text("utf-8"))["text"]
+    elif body.get("cache_only"):
+        return {"miss": True}
+    else:
+        text = await chat_completion(p, msgs, want_json, temperature=float(body.get("temperature", 0.6)), think=think)
+        if body.get("cache") and text.strip():
+            cpath.write_text(json.dumps({"t": int(time.time()), "text": text}, ensure_ascii=False), "utf-8")
     return {"json": extract_json(text)} if want_json else {"text": text}
 
 
