@@ -30,11 +30,13 @@
       <a href="#pron" data-tab="pron">发音</a>
       <a href="#chat" data-tab="chat">AI 对话</a>
       <a href="#progress" data-tab="progress">进步</a>
+      <a href="#help" data-tab="help">怎么用</a>
       <a href="#settings" data-tab="settings">设置</a>
     </nav>
     <p class="foot" id="railFoot"></p>
   </aside>
   <div class="main">
+    <button class="page-help" id="pageHelp" aria-label="这一页怎么用" aria-expanded="false">?</button>
     <main data-view="today" id="view-today"></main>
     <main data-view="retell" id="view-retell" hidden></main>
     <main data-view="solo" id="view-solo" hidden></main>
@@ -43,6 +45,7 @@
     <main data-view="pron" id="view-pron" hidden></main>
     <main data-view="chat" id="view-chat" hidden></main>
     <main data-view="progress" id="view-progress" hidden></main>
+    <main data-view="help" id="view-help" hidden></main>
     <main data-view="settings" id="view-settings" hidden></main>
   </div>
 </div>
@@ -57,6 +60,7 @@
 <script src="gaps.js"></script>
 <script src="solo.js"></script>
 <script src="chat.js"></script>
+<script src="guide.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

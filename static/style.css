@@ -595,3 +595,57 @@ audio.native { width: 100%; height: 40px; }
   .chat-group { white-space: normal; }
 }
 .msg.me > .btn { justify-self: end; }
+
+/* guide, help page, page help */
+.main { position: relative; }
+
+/* 「开始使用」清单卡 */
+.guide { background: var(--surface); box-shadow: var(--elev); border-radius: var(--r); padding: 18px 20px; display: grid; gap: 14px; }
+.guide-head { align-items: baseline; gap: 10px; }
+.guide-head h2 { font-size: 15px; font-weight: 600; }
+.guide-head .hint { text-align: right; }
+.guide-steps { list-style: none; margin: 0; padding: 0; display: grid; }
+.guide-step { border-top: 1px solid var(--line); }
+.guide-step:first-child { border-top: 0; }
+.guide-step-title { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 0; border: 0; background: transparent; color: var(--ink); text-align: left; cursor: pointer; border-radius: var(--r-sm); }
+.guide-step-title b { font-weight: 500; font-size: 14px; }
+.guide-step.is-open .guide-step-title b { font-weight: 600; }
+.guide-n { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--surface-2); color: var(--muted); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.guide-n svg { width: 13px; height: 13px; }
+.guide-step.is-done .guide-n { background: var(--good-soft); color: var(--good); }
+.guide-body { display: grid; gap: 8px; margin-left: 34px; padding: 0 0 14px; }
+.guide-ai { display: grid; gap: 8px; margin-top: 2px; }
+.guide-ai input.text { padding: 9px 12px; font-size: 14px; }
+.guide-ai .row { align-items: center; }
+
+/* 右上角的「?」和气泡 */
+.page-help { position: absolute; top: 16px; right: 16px; width: 28px; height: 28px; border: 0; border-radius: 50%; background: var(--surface-2); color: var(--muted); font: 600 14px/1 var(--f-ui); display: grid; place-items: center; cursor: pointer; z-index: 31; transition: color .15s; }
+.page-help:hover { color: var(--ink); }
+.help-pop { position: absolute; top: 52px; right: 16px; width: min(340px, 90vw); background: var(--surface); box-shadow: var(--elev-hi); border-radius: var(--r); padding: 14px 16px; z-index: 30; display: grid; gap: 6px; font-size: 14px; }
+.help-pop > b { font-weight: 600; }
+.help-pop p { font-size: 13px; color: var(--ink-2); }
+.help-pop p.hint { color: var(--muted); }
+.help-pop .help-more { justify-self: start; margin-top: 4px; font-size: 13px; color: var(--accent-ink); text-decoration: none; }
+.help-pop .help-more:hover { text-decoration: underline; }
+
+/* 「怎么用」页 */
+.help-group { display: grid; gap: 4px; }
+.help-when { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .04em; margin-top: 6px; }
+.help-list { display: grid; }
+.help-item { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 2px 20px; align-items: baseline; padding: 9px 0; border-top: 1px solid var(--line); }
+.help-item b { font-weight: 600; font-size: 14px; }
+.help-item .hint { font-size: 13px; }
+.help-page { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(0, 2fr); gap: 2px 20px; padding: 12px 10px; border-top: 1px solid var(--line); border-radius: var(--r-sm); scroll-margin-top: 80px; }
+.help-page > a { grid-row: 1 / span 2; align-self: start; font-weight: 600; text-decoration: none; }
+.help-page > a:hover { color: var(--accent-ink); }
+.help-page > p { font-size: 14px; color: var(--ink-2); }
+.help-page > p.hint { font-size: 13px; color: var(--muted); }
+.tips { margin: 0; padding-left: 18px; display: grid; gap: 8px; font-size: 14px; color: var(--ink-2); }
+.flash { animation: help-flash 1.5s ease-out; }
+@keyframes help-flash { 0%, 30% { background: var(--accent-soft); } 100% { background: transparent; } }
+
+@media (max-width: 600px) {
+  .guide { padding: 16px; }
+  .help-item, .help-page { grid-template-columns: 1fr; }
+  .help-page > a { grid-row: auto; }
+}

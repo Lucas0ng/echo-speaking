@@ -629,14 +629,16 @@ function renderHeader() {
 }
 let TAB = 'today';
 function setTab(t) {
+  togglePageHelp(false);
   if (t === 'log') t = 'progress';
-  if (!['today', 'retell', 'solo', 'chunks', 'errors', 'pron', 'chat', 'progress', 'settings'].includes(t)) t = 'today';
+  if (!['today', 'retell', 'solo', 'chunks', 'errors', 'pron', 'chat', 'progress', 'settings', 'help'].includes(t)) t = 'today';
   if (TAB !== t) stopEverything();
   TAB = t;
   $$('.nav a').forEach(a => a.setAttribute('aria-selected', String(a.dataset.tab === t)));
   $$('main[data-view]').forEach(m => { m.hidden = m.dataset.view !== t; });
-  ({ today: renderToday, retell: renderRetell, solo: renderSolo, chunks: renderChunks, errors: renderErrors, pron: renderPron, chat: renderChat, progress: renderProgress, settings: renderSettings })[t]();
+  ({ today: renderToday, retell: renderRetell, solo: renderSolo, chunks: renderChunks, errors: renderErrors, pron: renderPron, chat: renderChat, progress: renderProgress, settings: renderSettings, help: renderHelp })[t]();
   if (location.hash !== '#' + t) history.replaceState(null, '', '#' + t);
+  $('#pageHelp').hidden = t === 'help';
 }
 $$('.nav a').forEach(a => a.addEventListener('click', e => { e.preventDefault(); setTab(a.dataset.tab); }));
 window.addEventListener('hashchange', () => { const t = location.hash.slice(1); if (t && t !== TAB) setTab(t); });
@@ -678,10 +680,11 @@ let RTOK = 0;
 async function renderToday() {
   const root = $('#view-today'); if (root.hidden) return;
   const myTok = ++RTOK;
-  if (!N) { root.replaceChildren(h('p', { class: 'err', text: STATUS.lesson_error || '没有读到课程。检查设置里的资料文件夹。' })); return; }
+  if (!N) { root.replaceChildren(...[guideCard(), h('p', { class: 'err', text: STATUS.lesson_error || '没有读到课程。检查设置里的资料文件夹。' })].filter(Boolean)); return; }
   const n = S.prefs.cur, L = LESSONS[n - 1], rec = lessonRec(n), st = lp(n);
   if (!st.step) st.step = !rec.sh ? 1 : !rec.ph ? 2 : !rec.sp ? 3 : 1;
   const frag = [];
+  const gc = guideCard(); if (gc) frag.push(gc);
   const due = RECS.ok ? BASELINES.filter(baseDue) : [];
   if (due.length) frag.push(h('div', { class: 'notice row' }, h('span', { class: 'grow', text: '本月的基准录音还没录：' + due.map(b => b.title).join('、') + '，每条 1 分钟。以后每个月拿它和第 1 次对比。' }),
     h('button', { class: 'btn', onclick: () => setTab('progress') }, '去录')));
