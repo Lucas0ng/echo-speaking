@@ -68,7 +68,7 @@ async function stt(blob, ref = '', arch = null) { return (await sttFull(blob, re
 const LEARNER = "The learner is a Chinese graduate student (master's level, roughly IELTS 5.5–6.5 speaking) practising spoken English. Explanations for the learner are in simplified Chinese; English examples are natural, spoken and modern.";
 
 /* ================= state ================= */
-const S = { days: {}, lessons: {}, srs: {}, cards: {}, prefs: { cur: 1, voice: '', ttsRate: 0.95, autoSpeak: true, level: 'normal', rate: 1, blind: false } };
+const S = { days: {}, lessons: {}, srs: {}, cards: {}, errs: {}, prefs: { cur: 1, voice: '', ttsRate: 0.95, autoSpeak: true, level: 'normal', rate: 1, blind: false } };
 let LESSONS = [], N = 0, STATUS = {}, CFG = null;
 let saveT;
 function save() { clearTimeout(saveT); saveT = setTimeout(() => post('/api/state', S).catch(() => {}), 400); }
@@ -629,7 +629,8 @@ function buildStep3(panel, n, L, rec, st) {
     const s = ta2.value.trim(); if (s.split(/\s+/).length < 8) { alertBox('再多说几句（至少 8 个词）再点评。'); return; }
     st.busy.review = true; renderToday();
     try {
-      st.review = await aiText(LEARNER + '\n\nIELTS-style speaking task (Part ' + L.p + '): "' + prompt + '"\nTarget chunk for today: "' + L.x + '".\nSpeech-to-text transcript of the learner (ignore punctuation and obvious mis-hearings):\n---\n' + s.slice(0, 6000) + '\n---\nJSON: {"comment_zh": "中文两句：做得好的一点 + 最该改的一点", "band": "rough IELTS speaking band, e.g. \\"6.0\\"", "corrected": "their answer with grammar and word choice fixed, same meaning", "natural": "a more fluent, natural version, about the same length", "fixes": [{"original": "...", "better": "...", "why_zh": "中文一句"}], "chunks": [{"en": "a useful multi-word chunk for this topic", "zh": "..."}], "used_target": true or false}. At most 5 fixes. Exactly 4 chunks (multi-word expressions, not single words).');
+      st.review = await aiText(LEARNER + '\n\nIELTS-style speaking task (Part ' + L.p + '): "' + prompt + '"\nTarget chunk for today: "' + L.x + '".\nSpeech-to-text transcript of the learner (ignore punctuation and obvious mis-hearings):\n---\n' + s.slice(0, 6000) + '\n---\nJSON: {"comment_zh": "中文两句：做得好的一点 + 最该改的一点", "band": "rough IELTS speaking band, e.g. \\"6.0\\"", "corrected": "their answer with grammar and word choice fixed, same meaning", "natural": "a more fluent, natural version, about the same length", "fixes": [{"original": "...", "better": "...", "why_zh": "中文一句"}], "chunks": [{"en": "a useful multi-word chunk for this topic", "zh": "..."}], "used_target": true or false}. At most 5 fixes. Exactly 4 chunks (multi-word expressions, not single words).' + errPromptPart());
+      if (st.review) st.review.errKeys = errIngest(st.review.errors, '开口说 · ' + L.t);
       markLesson(n, 'sp');
     } catch (e) { alertBox(e.message); }
     st.busy.review = false; renderToday();
@@ -781,7 +782,8 @@ async function summarize() {
   CHAT.summary = { loading: true }; renderChat();
   try {
     const transcriptTxt = CHAT.view.map(v => (v.role === 'ai' ? 'Partner: ' + v.en : 'Learner: ' + v.text)).join('\n');
-    CHAT.summary = await aiText(LEARNER + '\n\nPractice conversation:\n---\n' + transcriptTxt.slice(-12000) + "\n---\nReview the LEARNER's English only. JSON: {\"comment_zh\": \"中文，三句以内总评\", \"patterns\": [{\"issue_zh\": \"反复出现的问题\", \"example\": \"learner's words\", \"better\": \"corrected\"}], \"chunks\": [{\"en\": \"multi-word chunk they could have used\", \"zh\": \"...\"}]}. At most 3 patterns, exactly 4 chunks.");
+    CHAT.summary = await aiText(LEARNER + '\n\nPractice conversation:\n---\n' + transcriptTxt.slice(-12000) + "\n---\nReview the LEARNER's English only. JSON: {\"comment_zh\": \"中文，三句以内总评\", \"patterns\": [{\"issue_zh\": \"反复出现的问题\", \"example\": \"learner's words\", \"better\": \"corrected\"}], \"chunks\": [{\"en\": \"multi-word chunk they could have used\", \"zh\": \"...\"}]}. At most 3 patterns, exactly 4 chunks." + errPromptPart());
+    if (CHAT.summary) CHAT.summary.errKeys = errIngest(CHAT.summary.errors, 'AI 对话 · ' + SCEN[CHAT.scen].label);
   } catch (e) { CHAT.summary = { error: e.message }; }
   renderChat();
 }
@@ -1052,7 +1054,7 @@ async function renderSettings() {
     const [ls, st] = await Promise.all([api('/api/lessons'), api('/api/status')]);
     LESSONS = ls.lessons; N = LESSONS.length; STATUS = st;
     await Promise.all([
-      api('/api/state').then(d => { for (const k of ['days', 'lessons', 'srs', 'cards']) if (d[k]) S[k] = d[k]; Object.assign(S.prefs, d.prefs || {}); }).catch(() => {}),
+      api('/api/state').then(d => { for (const k of ['days', 'lessons', 'srs', 'cards', 'errs']) if (d[k]) S[k] = d[k]; Object.assign(S.prefs, d.prefs || {}); }).catch(() => {}),
       loadRecs()]);
   } catch (e) { $('#view-today').replaceChildren(h('p', { class: 'err', text: e.message })); return; }
   if (!S.prefs.cur || S.prefs.cur > N) S.prefs.cur = 1;
