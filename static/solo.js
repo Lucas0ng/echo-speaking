@@ -52,8 +52,8 @@ const SOLO_SCENES = [
 ];
 const soloPick = (list, not) => { const pool = list.filter(x => x[0] !== not); return pool[Math.floor(Math.random() * pool.length)] || list[0]; };
 
-/* Chunks to try in 睡前复述今天: today's lesson chunk, then the newest chunk-sized cards from the last 3 days. */
-function soloChunks(max = 5) {
+/* Chunks to try in 睡前复述今天 and in every AI chat scene: today's lesson chunk, then the newest chunk-sized cards from the last 3 days. */
+function recentChunks(max = 5) {
   const out = [], seen = new Set(), add = (en, zh) => { const k = en.trim().toLowerCase(); if (k && !seen.has(k)) { seen.add(k); out.push({ en: en.trim(), zh: zh || '' }); } };
   const L = typeof LESSONS !== 'undefined' ? LESSONS[S.prefs.cur - 1] : null;
   if (L?.x) add(L.x, '今日语块');

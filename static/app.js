@@ -1704,36 +1704,27 @@ function renderPron() {
 }
 
 /* ================= CHAT ================= */
-const SCEN = {
-  topic: { label: '今日话题', role: n => 'You are a friendly IELTS speaking partner. Talk with the learner about "' + LESSONS[n - 1].t + '" in the style of IELTS Part ' + LESSONS[n - 1].p + ' and Part 3 follow-ups. Ask one question at a time. Give the learner chances to use the chunk "' + LESSONS[n - 1].x + '".' },
-  research: { label: '介绍研究', line: 'academic', role: () => 'You are a friendly professor from another university meeting the learner at a poster session at an international conference. Ask about their research topic, why it matters, their method, results so far, and next steps.' },
-  meeting: { label: '组会汇报', line: 'academic', role: () => "You are the learner's supervisor in a weekly lab meeting held in English. Ask them to report this week's progress, then ask kind but probing follow-up questions." },
-  interview: { label: '英文面试', role: () => 'You are an interviewer for a research internship or a graduate job. Ask common interview questions one at a time.' },
-  coffee: { label: '会议茶歇', role: () => 'You are a PhD student from another country chatting with the learner during a coffee break at a conference. Keep it light.' },
-  free: { label: '自由聊天', role: () => 'You are a friendly English-speaking friend. Chat about daily life, food, hobbies and plans.' },
-};
-const CHAT = { scen: 'topic', lesson: 1, turns: [], view: [], busy: false, summary: null, started: false, err: '', draft: '' };
-function rules() {
-  const lvl = S.prefs.level === 'easy' ? 'Use simple, common words and short sentences (CEFR A2–B1).' : 'Use natural spoken English at about CEFR B2.';
-  return LEARNER + '\n\nROLE-PLAY. ' + SCEN[CHAT.scen].role(CHAT.lesson) + '\n' + lvl + ' Keep each reply to 1–3 short spoken sentences and end with one question. The learner uses speech-to-text, so ignore punctuation and capitalisation.\nAfter every learner message reply with JSON: {"reply": "your next line in English", "reply_zh": "中文翻译", "feedback": null or {"better": "a more natural English version of the learner\'s LAST message", "note_zh": "中文一句，说明主要改动"}}. feedback is null when their message was already natural or there is no learner message yet. If the learner writes Chinese, put the English way to say it in feedback.better and set note_zh to "试着把这句英文读出来再接着聊".';
-}
+/* Scenes, prompts, 求助 and the end-of-chat review are in chat.js. */
+const CHAT = { scen: 'topic', lesson: 1, turns: [], view: [], busy: false, summary: null, started: false, err: '', draft: '', task: null, chunks: [] };
 function startChatOn(n) { CHAT.scen = 'topic'; CHAT.lesson = n; resetChat(); setTab('chat'); startChat(); }
-function resetChat() { CHAT.turns = []; CHAT.view = []; CHAT.summary = null; CHAT.started = false; CHAT.busy = false; CHAT.err = ''; }
+function resetChat() { CHAT.turns = []; CHAT.view = []; CHAT.summary = null; CHAT.started = false; CHAT.busy = false; CHAT.err = ''; CHAT.task = chatTask(CHAT.scen); CHAT.chunks = recentChunks(); }
 async function chatCall(userText) {
   CHAT.busy = true; CHAT.err = ''; renderChat();
-  const msgs = [{ role: 'system', content: rules() }, ...CHAT.turns.slice(-24)];
+  const msgs = [{ role: 'system', content: chatRules() }, ...CHAT.turns.slice(-24)];
   if (userText == null) msgs.push({ role: 'user', content: '(Start the role-play now with a short greeting and your first question.)' });
   try {
     const r = await aiText('', { messages: msgs, temperature: 0.8, think: false });
     const reply = String(r.reply || '').trim(); if (!reply) throw new Error('AI 没给出回复，再试一次。');
     if (userText != null && r.feedback?.better) { const last = CHAT.view[CHAT.view.length - 1]; if (last?.role === 'me') last.fb = { better: String(r.feedback.better), note: String(r.feedback.note_zh || '') }; }
-    CHAT.turns.push({ role: 'assistant', content: reply });
+    if (userText != null) chatMarkUnclear(r);
+    // the history keeps the JSON shape: with plain-text replies in it the model drifts back to plain text after a turn
+    CHAT.turns.push({ role: 'assistant', content: JSON.stringify({ reply, reply_zh: String(r.reply_zh || ''), ...(r.unclear != null ? { unclear: !!r.unclear } : {}) }) });
     CHAT.view.push({ role: 'ai', en: reply, zh: String(r.reply_zh || '') });
     CHAT.busy = false; renderChat();
     if (S.prefs.autoSpeak) say(reply, $$('.msg.ai .speak-btn').pop());
   } catch (e) { CHAT.busy = false; CHAT.err = e.message; renderChat(); }
 }
-function startChat() { CHAT.started = true; chatCall(null); }
+function startChat() { if (!CHAT.chunks.length) CHAT.chunks = recentChunks(); if (!CHAT.task) CHAT.task = chatTask(CHAT.scen); CHAT.started = true; chatCall(null); }
 function sendChat(text) {
   text = text.trim(); if (!text || CHAT.busy) return;
   CHAT.turns.push({ role: 'user', content: text }); CHAT.view.push({ role: 'me', text }); CHAT.draft = '';
@@ -1741,11 +1732,8 @@ function sendChat(text) {
 }
 async function summarize() {
   CHAT.summary = { loading: true }; renderChat();
-  try {
-    const transcriptTxt = CHAT.view.map(v => (v.role === 'ai' ? 'Partner: ' + v.en : 'Learner: ' + v.text)).join('\n');
-    CHAT.summary = await aiText(LEARNER + '\n\nPractice conversation:\n---\n' + transcriptTxt.slice(-12000) + "\n---\nReview the LEARNER's English only. JSON: {\"comment_zh\": \"中文，三句以内总评\", \"patterns\": [{\"issue_zh\": \"反复出现的问题\", \"example\": \"learner's words\", \"better\": \"corrected\"}], \"chunks\": [{\"en\": \"multi-word chunk they could have used\", \"zh\": \"...\"}]}. At most 3 patterns, exactly 4 chunks." + errPromptPart());
-    if (CHAT.summary) { CHAT.summary.errKeys = errIngest(CHAT.summary.errors, 'AI 对话 · ' + SCEN[CHAT.scen].label); updateBadge(); }
-  } catch (e) { CHAT.summary = { error: e.message }; }
+  try { CHAT.summary = await chatSummary(); updateBadge(); }
+  catch (e) { CHAT.summary = { error: e.message }; }
   renderChat();
 }
 function renderChat() {
@@ -1876,7 +1864,7 @@ async function soloReviewTake(t) {
   const mode = SO.mode, topic = SO.topic?.[0] || '';
   t.reviewBusy = true; renderSolo();
   try {
-    const r = await soloReview(mode, topic, t.text, mode === 'day' ? soloChunks() : [], t.stuck);
+    const r = await soloReview(mode, topic, t.text, mode === 'day' ? recentChunks() : [], t.stuck);
     if (r) t.review = r; else alertBox('AI 没有返回点评，等一会儿再试。');
     updateBadge();
   } catch (e) { alertBox(e.message); }
@@ -1886,7 +1874,7 @@ function renderSolo() {
   const root = $('#view-solo'); if (root.hidden) return;
   const mode = SO.mode, on = Rec.isOn('so');
   const topic = (SO.topic = soloTopic());
-  const chunks = mode === 'day' ? soloChunks() : [];
+  const chunks = mode === 'day' ? recentChunks() : [];
   const file = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: e => {
     const f = e.target.files?.[0]; if (!f) return;
     soloClearTake(); soloClearPhoto();
@@ -2015,7 +2003,7 @@ async function soloRecord() {
   try {
     const j = await sttFull(blob, '', { kind: 'solo', line: 'daily', meta: { mode, topic: topic.slice(0, 300), photo } });
     take.id = j.id; take.text = j.text; take.metrics = j.metrics; take.stuck = j.stuck || [];
-    if (mode === 'day') take.used = soloUsed(soloChunks(), j.text);
+    if (mode === 'day') take.used = soloUsed(recentChunks(), j.text);
   } catch (e) { take.error = e.message; }
   take.pending = false; renderSolo();
 }
