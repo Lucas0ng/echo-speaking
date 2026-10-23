@@ -568,8 +568,10 @@ class Shadow {
         h('button', { class: 'btn ghost icon-btn', 'aria-label': '上一句', title: '上一句', disabled: i <= 0, onclick: () => this.select(i - 1) }, ic('left')),
         h('button', { class: 'btn ghost icon-btn', 'aria-label': '下一句', title: '下一句', disabled: i >= this.sents.length - 1, onclick: () => this.select(i + 1) }, ic('right'))),
     ];
-    if (this.busy.has('chk' + i)) kids.push(h('p', { class: 'thinking', text: '本地识别中…' }));
+    if (recOn) kids.push(h('p', { class: 'hint', text: '在录音：跟着说，说完停一下会自动结束。' })); // the last take's result would read as this one's
+    else if (this.busy.has('chk' + i)) kids.push(h('p', { class: 'thinking', text: '本地识别中…' }));
     else if (res?.error) kids.push(h('p', { class: 'err', text: res.error }));
+    else if (res && !res.heard) kids.push(h('p', { class: 'err', text: '这次没录到你说话，不算分。再按「重新跟读」说一次。' }));
     else if (res) kids.push(diffView(s.text, res.heard, res.words));
     else if (!rec) kids.push(h('p', { class: 'hint', text: '听一遍原声，再按「跟读这句」。说完停顿一下会自动结束，录完自动比对，标出没说清的词。' }));
     const pv = this.pitchView(i); if (pv) kids.push(pv);
@@ -586,9 +588,9 @@ class Shadow {
       const res = this.res.get(i), rec = this.recs.get(i), hist = shHistory(this.path, i);
       const lastPast = hist.length ? hist[hist.length - 1].score : null;
       const st = this.recording === i ? h('span', { class: 'st' }, h('span', { class: 'rec-dot' })) :
-        res?.score != null ? h('span', { class: 'st' + (res.score >= 80 ? ' ok' : ''), text: res.score + '%' }) :
+        res?.heard ? h('span', { class: 'st' + (res.score >= 80 ? ' ok' : ''), text: res.score + '%' }) :
         lastPast != null ? h('span', { class: 'st past', title: '上次跟读', text: lastPast + '%' }) :
-        rec ? h('span', { class: 'st ok' }, ic('check')) : h('span', { class: 'st' });
+        rec && !res ? h('span', { class: 'st ok' }, ic('check')) : h('span', { class: 'st' });
       return h('div', { class: 'sent' + (i === this.cur ? ' cur' : ''), onclick: () => this.select(i) },
         h('span', { class: 'ts', text: fmt(s.s) }), h('span', { class: 'tx' + (S.prefs.blind && !rec ? ' blind' : ''), text: s.text }), st);
     }));

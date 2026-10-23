@@ -290,6 +290,47 @@ def to_sentences(result: dict) -> list[dict]:
     return out
 
 
+TRANSCRIPT_V = 2  # 2: lines are cut at the pauses a shadowing lesson leaves for the learner (split_at_pauses)
+SPLIT_GAP = 1.5  # s of silence inside one subtitle line that means the lesson stopped for the learner to repeat
+
+
+def speech_runs(samples: np.ndarray, gap: float = SPLIT_GAP) -> list[tuple[float, float]]:
+    """(start, end) seconds of the stretches of sound in `samples` that are separated by at least `gap` s of silence."""
+    loud = np.flatnonzero(_loud_frames(samples))
+    if not len(loud):
+        return []
+    cuts = np.flatnonzero((np.diff(loud) - 1) * 0.03 >= gap)
+    starts = np.concatenate(([loud[0]], loud[cuts + 1]))
+    ends = np.concatenate((loud[cuts], [loud[-1]])) + 1
+    return [(float(a) * 0.03, float(b) * 0.03) for a, b in zip(starts, ends)]
+
+
+def split_at_pauses(sent: dict, audio: np.ndarray, transcribe) -> list[dict]:
+    """Whisper stretches a word across the gap a shadowing lesson leaves for the learner, so one line can hold
+    "The pace of life [4 s of silence] The pace of life". Cut such a line at each gap and re-transcribe every piece;
+    its own word timings are useless for finding where the cut falls in the text. `transcribe(samples) -> str`."""
+    s0 = sent["s"]
+    seg = audio[int(s0 * SR): int(sent["e"] * SR)]
+    runs = [r for r in speech_runs(seg) if r[1] - r[0] >= 0.3]  # shorter is a breath or a click
+    if len(runs) < 2:
+        return [sent]
+    out = []
+    for a, b in runs:
+        s, e = round(s0 + max(0.0, a - 0.15), 2), round(min(sent["e"], s0 + b + 0.15), 2)
+        text = transcribe(audio[int(s * SR): int(e * SR)]).strip()
+        if text:
+            out.append({"s": s, "e": e, "text": text})
+    return out or [sent]
+
+
+def whisper_text(samples: np.ndarray) -> str:
+    import mlx_whisper
+
+    res = mlx_whisper.transcribe(samples, path_or_hf_repo=CFG["whisper_model"], language="en",
+                                 condition_on_previous_text=False, verbose=None)
+    return " ".join(s["text"].strip() for s in res.get("segments", [])).strip()
+
+
 # ---------------------------------------------------------------- fluency metrics
 FILLERS = {"um", "umm", "uh", "uhh", "uhm", "erm", "er", "err", "hmm", "hm", "mm", "mmm", "ah", "eh"}
 PAUSE = 0.25  # s; silent-pause threshold common in L2 fluency research (de Jong & Bosker 2013)
@@ -573,7 +614,8 @@ def transcribe_file_inproc(rel: str) -> None:
     audio = decode_audio(p)
     res = mlx_whisper.transcribe(audio, path_or_hf_repo=CFG["whisper_model"], language="en", word_timestamps=True,
                                  condition_on_previous_text=False, verbose=None)
-    data = {"file": rel, "duration": round(len(audio) / SR, 2), "sentences": to_sentences(res), "created": time.time()}
+    sents = [p for st in to_sentences(res) for p in split_at_pauses(st, audio, whisper_text)]
+    data = {"file": rel, "v": TRANSCRIPT_V, "duration": round(len(audio) / SR, 2), "sentences": sents, "created": time.time()}
     tmp = tpath(rel).with_suffix(".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False), "utf-8")
     tmp.replace(tpath(rel))
