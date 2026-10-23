@@ -65,7 +65,7 @@ function soloChunks(max = 5) {
 const soloUsed = (chunks, text) => chunks.filter(c => chunkUsed(c.en, text)).map(c => c.en);
 
 /* AI feedback for 看图描述 / 睡前复述今天, in the shape renderReview draws. Errors go into the error log. */
-async function soloReview(mode, topic, text, chunks = []) {
+async function soloReview(mode, topic, text, chunks = [], stuck = []) {
   const task = mode === 'day' ? 'The learner retold their own day in English for one minute, in order.'
     : 'The learner described a picture or the place they are in for about a minute. Task: "' + topic + '"';
   const j = await aiText(LEARNER + '\n\n' + task
@@ -75,9 +75,16 @@ async function soloReview(mode, topic, text, chunks = []) {
     + (mode === 'day' ? 'especially past tenses, time order words and linking.' : 'especially words for positions, objects and actions they were missing.')
     + '\nJSON: {"comment_zh": "中文两句：做得好的一点 + 最该改的一点", "corrected": "their speech with grammar and word choice fixed, same meaning", '
     + '"natural": "a more fluent, natural version, about the same length", "fixes": [{"original": "...", "better": "...", "why_zh": "中文一句"}], '
-    + '"chunks": [{"en": "a useful multi-word chunk for what they were trying to say", "zh": "..."}]}. At most 5 fixes. Exactly 4 chunks.' + errPromptPart());
-  if (j) j.errKeys = errIngest(j.errors, (SOLO_MODES[mode]?.zh || '自言自语') + (mode === 'day' ? '' : ' · ' + topic.slice(0, 40)));
+    + '"chunks": [{"en": "a useful multi-word chunk for what they were trying to say", "zh": "..."}]}. At most 5 fixes. Exactly 4 chunks.' + gapPromptPart(stuck) + errPromptPart());
+  const src = (SOLO_MODES[mode]?.zh || '自言自语') + (mode === 'day' ? '' : ' · ' + topic.slice(0, 40));
+  if (j) { j.errKeys = errIngest(j.errors, src); j.cards = gapIngest(j.gaps, '卡壳', src); }
   return j;
+}
+/* 60 秒不停说 has no content review (it only trains not stopping), but where they got stuck can still become cards. */
+async function soloGapCards(text, stuck) {
+  const j = await aiText(LEARNER + '\n\nThe learner talked for a minute without preparing. Speech-to-text transcript (ignore punctuation and obvious mis-hearings):\n---\n'
+    + text.slice(0, 4000) + '\n---\n' + gapPromptPart(stuck) + 'JSON: {"gaps": [...]}', { think: false });
+  return gapIngest(j?.gaps, '卡壳', SOLO_MODES.nonstop.zh);
 }
 
 /* Past attempts of one mode from the recordings archive (oldest first), and first vs latest for 60 秒不停说. */

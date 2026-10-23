@@ -91,7 +91,7 @@ function markLesson(n, step) {
 }
 /* Undo a step marked done by mistake. The day's habit dot stays: something was still practised that day. */
 function unmarkLesson(n, step) { const L = lessonRec(n); delete L[step]; delete L.at; save(); renderHeader(); }
-const DAY_FLAGS = ['sh', 'ph', 'sp', 'rv', 'rt', 'bl', 'er', 'pr'];
+const DAY_FLAGS = ['sh', 'ph', 'sp', 'rv', 'rt', 'bl', 'er', 'pr', 'so'];
 const active = d => { const v = S.days[d]; return !!(v && (v.ch || DAY_FLAGS.some(k => v[k]))); };
 const level = d => { const v = S.days[d]; if (!v) return 0; return Math.min(3, DAY_FLAGS.filter(k => v[k]).length + (v.ch ? 1 : 0)); };
 const lessonsDone = () => Object.values(S.lessons).filter(l => l.sh && l.ph && l.sp).length;
@@ -246,8 +246,8 @@ async function loadRecs() {
   return RECS.list;
 }
 const recAudio = id => '/api/recordings/' + encodeURIComponent(id) + '/audio';
-const KIND_ZH = { talk: '开口说', baseline: '基准录音', r432: '4/3/2 复述', chat: 'AI 对话', shadow: '跟读', chunk: '语块造句', review: '复习', pron: '发音练习' };
-const CURVE_KINDS = ['talk', 'baseline', 'r432'];
+const KIND_ZH = { talk: '开口说', baseline: '基准录音', r432: '4/3/2 复述', solo: '自言自语', chat: 'AI 对话', shadow: '跟读', chunk: '语块造句', review: '复习', pron: '发音练习' };
+const CURVE_KINDS = ['talk', 'baseline', 'r432', 'solo'];
 const METRICS = [
   { k: 'wpm', zh: '语速', unit: '词/分', better: 'up', digits: 0, tip: '每分钟说出的词数（不算 um、uh），中间的停顿也算进时间。' },
   { k: 'fillers_per100', zh: '填充词', unit: '个/百词', better: 'down', digits: 1, tip: '每 100 个词里有几个 um、uh、er。' },
@@ -265,8 +265,9 @@ function metricsView(m, base) {
         base && shown ? h('small', { class: good ? 'up' : 'down', text: (d > 0 ? '+' : '−') + Math.abs(d).toFixed(x.digits) }) : null,
         h('span', { text: x.zh + ' · ' + x.unit }));
     })),
-    m.reliable ? null : h('p', { class: 'hint', text: '这段不到 20 个词，指标波动大，不进曲线。' }));
+    m.reliable ? null : h('p', { class: m.garbled ? 'err' : 'hint', text: m.garbled ? GARBLED_ZH : '这段不到 20 个词，指标波动大，不进曲线。' }));
 }
+const GARBLED_ZH = '识别结果有大段重复或快得不正常（本机 Whisper 偶尔会这样），这段的指标不算、不进曲线。再说一次就好。';
 /* one countdown at a time; stops the recording when the limit is reached */
 const TMR = { owner: null, elapsed: 0, limit: 0 };
 async function timedRec(owner, limit, rerender) {
@@ -629,12 +630,12 @@ function renderHeader() {
 let TAB = 'today';
 function setTab(t) {
   if (t === 'log') t = 'progress';
-  if (!['today', 'retell', 'chunks', 'errors', 'pron', 'chat', 'progress', 'settings'].includes(t)) t = 'today';
+  if (!['today', 'retell', 'solo', 'chunks', 'errors', 'pron', 'chat', 'progress', 'settings'].includes(t)) t = 'today';
   if (TAB !== t) stopEverything();
   TAB = t;
   $$('.nav a').forEach(a => a.setAttribute('aria-selected', String(a.dataset.tab === t)));
   $$('main[data-view]').forEach(m => { m.hidden = m.dataset.view !== t; });
-  ({ today: renderToday, retell: renderRetell, chunks: renderChunks, errors: renderErrors, pron: renderPron, chat: renderChat, progress: renderProgress, settings: renderSettings })[t]();
+  ({ today: renderToday, retell: renderRetell, solo: renderSolo, chunks: renderChunks, errors: renderErrors, pron: renderPron, chat: renderChat, progress: renderProgress, settings: renderSettings })[t]();
   if (location.hash !== '#' + t) history.replaceState(null, '', '#' + t);
 }
 $$('.nav a').forEach(a => a.addEventListener('click', e => { e.preventDefault(); setTab(a.dataset.tab); }));
@@ -822,8 +823,8 @@ function buildStep3(panel, n, L, rec, st) {
     const s = ta2.value.trim(); if (s.split(/\s+/).length < 8) { alertBox('再多说几句（至少 8 个词）再点评。'); return; }
     st.busy.review = true; renderToday();
     try {
-      st.review = await aiText(LEARNER + '\n\nIELTS-style speaking task (Part ' + L.p + '): "' + prompt + '"\nTarget chunk for today: "' + L.x + '".\nSpeech-to-text transcript of the learner (ignore punctuation and obvious mis-hearings):\n---\n' + s.slice(0, 6000) + '\n---\nJSON: {"comment_zh": "中文两句：做得好的一点 + 最该改的一点", "band": "rough IELTS speaking band, e.g. \\"6.0\\"", "corrected": "their answer with grammar and word choice fixed, same meaning", "natural": "a more fluent, natural version, about the same length", "fixes": [{"original": "...", "better": "...", "why_zh": "中文一句"}], "chunks": [{"en": "a useful multi-word chunk for this topic", "zh": "..."}], "used_target": true or false}. At most 5 fixes. Exactly 4 chunks (multi-word expressions, not single words).' + errPromptPart());
-      if (st.review) { st.review.errKeys = errIngest(st.review.errors, '开口说 · ' + L.t); updateBadge(); }
+      st.review = await aiText(LEARNER + '\n\nIELTS-style speaking task (Part ' + L.p + '): "' + prompt + '"\nTarget chunk for today: "' + L.x + '".\nSpeech-to-text transcript of the learner (ignore punctuation and obvious mis-hearings):\n---\n' + s.slice(0, 6000) + '\n---\nJSON: {"comment_zh": "中文两句：做得好的一点 + 最该改的一点", "band": "rough IELTS speaking band, e.g. \\"6.0\\"", "corrected": "their answer with grammar and word choice fixed, same meaning", "natural": "a more fluent, natural version, about the same length", "fixes": [{"original": "...", "better": "...", "why_zh": "中文一句"}], "chunks": [{"en": "a useful multi-word chunk for this topic", "zh": "..."}], "used_target": true or false}. At most 5 fixes. Exactly 4 chunks (multi-word expressions, not single words).' + gapPromptPart(st.stuck) + errPromptPart());
+      if (st.review) { st.review.errKeys = errIngest(st.review.errors, '开口说 · ' + L.t); st.review.cards = gapIngest(st.review.gaps, '卡壳', '开口说 · ' + L.t); updateBadge(); }
       markLesson(n, 'sp');
     } catch (e) { alertBox(e.message); }
     st.busy.review = false; renderToday();
@@ -853,7 +854,7 @@ function buildStep3(panel, n, L, rec, st) {
       st.busy.ana ? h('p', { class: 'thinking', text: 'AI 在逐句分析…' }) : null);
     panel.append(resBox);
     if (st.ana) for (const x of st.ana) panel.append(analysisView(x, { mine: true, src: '开口说 · ' + L.t }));
-    panel.append(renderReview(st.review, L));
+    put(panel, renderReview(st.review, L), gapNotice(st.review.cards));
   }
   panel.append(nextStepButton(n, 3, rec, 'sp', '只说不点评，标记完成'));
 }
@@ -871,7 +872,7 @@ async function speakRec(n, dur) {
   st.blob = blob; st.url = URL.createObjectURL(blob); st.review = null; st.audioReview = null; st.metrics = null; st.ana = null; st.busy.stt = true; renderToday();
   try {
     const L = LESSONS[n - 1], j = await sttFull(blob, '', { kind: 'talk', meta: { lesson: n, topic: L.t, prompt: promptText(L) } });
-    st.talk = j.text; st.metrics = j.metrics;
+    st.talk = j.text; st.metrics = j.metrics; st.stuck = j.stuck || [];
   } catch (e) { alertBox(e.message); }
   st.busy.stt = false; renderToday();
 }
@@ -1856,6 +1857,169 @@ function renderRetell() {
   });
 }
 
+/* ================= SOLO (自言自语) ================= */
+const SO = { mode: 'nonstop', topic: null, photo: null, take: null };
+const SOLO_PHOTO_TOPIC = ['Describe this photo: what is in it, where things are, what is happening, and how it makes you feel.', '描述这张照片'];
+const SOLO_DAY_TOPIC = ['Tell me about your day, in order: what you did, what went well, and what was annoying.', '按顺序讲今天'];
+function soloClearTake() { if (SO.take?.url) URL.revokeObjectURL(SO.take.url); SO.take = null; }
+function soloClearPhoto() { if (SO.photo) URL.revokeObjectURL(SO.photo); SO.photo = null; }
+function soloTopic() {
+  if (SO.mode === 'day') return SOLO_DAY_TOPIC;
+  if (SO.mode === 'picture' && SO.photo) return SOLO_PHOTO_TOPIC;
+  if (!SO.topic) SO.topic = SO.mode === 'picture' ? soloPick(SOLO_SCENES) : soloPick(SOLO_TOPICS);
+  return SO.topic;
+}
+function soloSetTopic(t) { soloClearTake(); SO.topic = t; renderSolo(); }
+async function soloReviewTake(t) {
+  if (!t || t.reviewBusy) return;
+  if (((t.text || '').match(/[A-Za-z][A-Za-z’']*/g) || []).length < 8) { alertBox('再多说几句（至少 8 个词）再点评。'); return; }
+  const mode = SO.mode, topic = SO.topic?.[0] || '';
+  t.reviewBusy = true; renderSolo();
+  try {
+    const r = await soloReview(mode, topic, t.text, mode === 'day' ? soloChunks() : [], t.stuck);
+    if (r) t.review = r; else alertBox('AI 没有返回点评，等一会儿再试。');
+    updateBadge();
+  } catch (e) { alertBox(e.message); }
+  t.reviewBusy = false; renderSolo();
+}
+function renderSolo() {
+  const root = $('#view-solo'); if (root.hidden) return;
+  const mode = SO.mode, on = Rec.isOn('so');
+  const topic = (SO.topic = soloTopic());
+  const chunks = mode === 'day' ? soloChunks() : [];
+  const file = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: e => {
+    const f = e.target.files?.[0]; if (!f) return;
+    soloClearTake(); soloClearPhoto();
+    SO.photo = URL.createObjectURL(f);
+    SO.topic = SOLO_PHOTO_TOPIC;
+    renderSolo();
+  } });
+  const tools = h('div', { class: 'row' });
+  if (mode === 'nonstop') {
+    tools.append(
+      h('button', { class: 'btn ghost', disabled: on, onclick: () => soloSetTopic(soloPick(SOLO_TOPICS, topic[0])) }, '换一个'),
+      h('button', { class: 'btn ghost', disabled: on || !N, onclick: () => { if (N) soloSetTopic([promptText(LESSONS[S.prefs.cur - 1]), '今天课里的话题']); } }, '用今天的话题'));
+  } else if (mode === 'picture') {
+    tools.append(
+      h('button', { class: 'btn ghost', disabled: on, onclick: () => file.click() }, SO.photo ? '换一张照片' : '选一张照片'),
+      file);
+    if (SO.photo) tools.append(h('button', { class: 'btn ghost', disabled: on, onclick: () => { soloClearTake(); soloClearPhoto(); SO.topic = null; renderSolo(); } }, '不用照片'));
+    else tools.append(h('button', { class: 'btn ghost', disabled: on, onclick: () => soloSetTopic(soloPick(SOLO_SCENES, topic[0])) }, '换一个'));
+  }
+  const card = h('div', { class: 'card solo-card' },
+    h('p', { class: 'hint', text: SOLO_MODES[mode].intro }),
+    h('div', { class: 'solo-topic' },
+      h('div', { class: 'row' }, h('p', { class: 'prompt grow', text: topic[0] }), sayBtn(topic[0], '朗读题目')),
+      h('p', { class: 'hint', text: topic[1] })),
+    SO.photo ? h('img', { class: 'solo-photo', src: SO.photo, alt: '你选的照片' }) : null,
+    tools);
+  if (mode === 'day') {
+    card.append(h('div', { class: 'solo-chunk-box' }, h('h3', { class: 'sub-h', text: '试着用上' }),
+      chunks.length ? h('ul', { class: 'solo-chunks' }, chunks.map(c => {
+        const used = !!SO.take?.used?.includes(c.en);
+        return h('li', { class: used ? 'used' : '' },
+          h('span', { class: 'en', text: c.en }), h('span', { class: 'zh', text: c.zh }),
+          used ? h('span', { class: 'ok', text: '✓ 用上了' }) : null);
+      })) : h('p', { class: 'hint', text: '最近 3 天没有新语块，自由说。' })));
+  }
+  card.append(h('div', { class: 'timer' },
+    h('button', { class: 'big-rec' + (on ? ' on' : ''), onclick: () => soloRecord() },
+      on ? [recDot(), '说完了'] : [ic('mic'), SO.take ? '再说一次' : '开始']),
+    timerView('so', SOLO_MODES[mode].secs)));
+  const frag = [
+    h('h2', { class: 'page-title', text: '自言自语' }),
+    h('p', { class: 'intro', text: '不看稿，对着自己说。三种练法都会存录音、算指标，进「进步」页。' }),
+    h('div', { class: 'row' }, seg(['nonstop', 'picture', 'day'], mode, v => {
+      if (Rec.isOn('so')) { renderSolo(); return; }
+      stopEverything(); soloClearTake(); soloClearPhoto();
+      SO.mode = v; SO.topic = null; renderSolo();
+    }, v => SOLO_MODES[v].zh)),
+    card];
+  const t = SO.take;
+  if (t) {
+    const box = h('div', { class: 'card solo-card solo-result' });
+    if (t.pending) box.append(h('p', { class: 'thinking', text: '本地转写、计算指标中' }));
+    if (t.error) box.append(h('p', { class: 'err', text: t.error }));
+    if (mode === 'nonstop') {
+      const m = t.metrics;
+      if (m) box.append(h('div', { class: 'metrics solo-metrics' }, h('div', { class: 'metric-row' },
+        h('div', { class: 'metric', title: '静音 2 秒以上算一次卡住' }, h('b', { text: Math.round(m.stops || 0) }), h('span', { text: '卡住 · 次' })),
+        h('div', { class: 'metric', title: '录音时长减去卡住的时间' }, h('b', { text: Math.round(m.flow_s || 0) }), h('span', { text: '不停顿 · 秒' })),
+        h('div', { class: 'metric', title: '最长一段连续说话' }, h('b', { text: Math.round(m.longest_s || 0) }), h('span', { text: '最长一口气 · 秒' })),
+        h('div', { class: 'metric', title: '每 100 个词里的填充词' }, h('b', { text: (m.fillers_per100 || 0).toFixed(1) }), h('span', { text: '填充词 · 个/百词' })))),
+        h('p', { class: 'hint', text: '卡住 = 静音 2 秒以上。不停顿秒数 = 录音时长减去卡住的时间。' }),
+        m.garbled ? h('p', { class: 'err', text: GARBLED_ZH }) : null);
+    } else if (t.metrics) box.append(metricsView(t.metrics));
+    if (mode === 'day' && Array.isArray(t.used)) box.append(h('p', { class: 'hint', text: '用上了 ' + t.used.length + ' / ' + chunks.length + ' 个语块' }));
+    box.append(h('audio', { controls: true, preload: 'none', src: t.id ? recAudio(t.id) : t.url }));
+    if (!t.pending) box.append(t.text ? h('p', { class: 'small' }, wordify(t.metrics?.garbled ? t.text.slice(0, 200) + ' …' : t.text, { mine: true, src: '自言自语' })) : h('p', { class: 'hint', text: '（没识别出文字）' }));
+    if (mode !== 'nonstop') {
+      box.append(h('div', { class: 'row' },
+        h('button', { class: 'btn', disabled: t.reviewBusy || t.pending || !t.text, onclick: () => soloReviewTake(t) }, t.reviewBusy ? '点评中…' : '点评内容'),
+        h('span', { class: 'hint', text: '约 ¥0.003，说错的会进错误本' })));
+      if (t.review) put(box, renderReview(t.review, { x: '', t: SOLO_MODES[mode].zh }), gapNotice(t.review.cards));
+    } else if (t.stuck?.length && t.text) {
+      // 60 秒不停说 gets no content review, but the places it got stuck can still become cards
+      box.append(h('div', { class: 'row' },
+        h('button', { class: 'btn', disabled: !!t.gapBusy || !!t.cards, onclick: async () => {
+          t.gapBusy = true; renderSolo();
+          try { t.cards = await soloGapCards(t.text, t.stuck); if (!t.cards.length) alertBox('这几处停顿像是在想内容，不是在找词，没有做成卡片。'); }
+          catch (e) { alertBox(e.message); }
+          t.gapBusy = false; renderSolo();
+        } }, t.gapBusy ? 'AI 在看…' : '把卡壳的地方做成卡片'),
+        h('span', { class: 'hint', text: '句子中间停了 ' + t.stuck.length + ' 次' })));
+      if (t.cards) put(box, gapNotice(t.cards));
+    }
+    frag.push(box);
+  }
+  const hist = h('div', { class: 'section solo-hist' });
+  frag.push(hist);
+  root.replaceChildren(...frag);
+  loadRecs().then(() => {
+    const recs = soloRecs(mode), rows = recs.slice(-10).reverse(), out = [];
+    if (mode === 'nonstop') {
+      const tr = soloTrend('nonstop');
+      if (tr) {
+        out.push(h('h2', { text: '60 秒不停说 · 共 ' + tr.n + ' 次' }));
+        out.push(h('p', { class: 'hint', text: '第 1 次（' + tr.first.date + '）：卡住 ' + Math.round(tr.first.stops || 0) + ' 次、不停顿 ' + Math.round(tr.first.flow || 0) + ' 秒 → 最近（' + tr.last.date + '）：卡住 ' + Math.round(tr.last.stops || 0) + ' 次、不停顿 ' + Math.round(tr.last.flow || 0) + ' 秒' }));
+        if (tr.points.length >= 2) out.push(h('div', { class: 'chart-card' },
+          h('div', { class: 'row' }, h('b', { class: 'grow', text: '每天最好的一次：不停顿秒数' }), h('span', { class: 'hint', text: '秒 · 越高越好' })),
+          lineChart(tr.points.map(p => ({ ...p, y: Math.round(p.y) })), { unit: '秒', better: 'up', digits: 0, height: 120 })));
+      }
+    }
+    if (rows.length) {
+      out.push(h('h2', { text: '以前的' + SOLO_MODES[mode].zh }));
+      out.push(h('div', { class: 'saved' }, rows.map(r => {
+        const m = r.metrics;
+        const stat = mode === 'nonstop'
+          ? (m ? '卡住 ' + Math.round(m.stops || 0) + ' 次 · 不停顿 ' + Math.round(m.flow_s || 0) + ' 秒' : '没有指标')
+          : (m ? Math.round(m.wpm || 0) + ' 词/分' : '没有指标');
+        return h('div', { class: 'rec-item' },
+          h('div', { class: 'row' }, h('span', { class: 'hint', text: r.date }), h('b', { class: 'grow', text: r.meta?.topic || SOLO_MODES[mode].zh })),
+          h('p', { class: 'small muted', text: stat }),
+          h('details', {}, h('summary', { text: '听录音' }), h('audio', { controls: true, preload: 'none', src: recAudio(r.id) })));
+      })));
+    } else if (!out.length) out.push(h('p', { class: 'hint', text: '还没有自言自语录音。' }));
+    hist.replaceChildren(...out);
+  });
+}
+async function soloRecord() {
+  if (Rec.isOn('so')) { Rec.stop(); return; }
+  const mode = SO.mode, topic = SO.topic?.[0] || '', photo = !!SO.photo;
+  const blob = await timedRec('so', SOLO_MODES[mode].secs, renderSolo);
+  if (!blob) { renderSolo(); return; }
+  if (SO.take?.url) URL.revokeObjectURL(SO.take.url);
+  const take = SO.take = { pending: true, url: URL.createObjectURL(blob) };
+  markDay('so');
+  renderSolo();
+  try {
+    const j = await sttFull(blob, '', { kind: 'solo', line: 'daily', meta: { mode, topic: topic.slice(0, 300), photo } });
+    take.id = j.id; take.text = j.text; take.metrics = j.metrics; take.stuck = j.stuck || [];
+    if (mode === 'day') take.used = soloUsed(soloChunks(), j.text);
+  } catch (e) { take.error = e.message; }
+  take.pending = false; renderSolo();
+}
+
 /* ================= PROGRESS ================= */
 const PG = { line: 'daily', all: false, show: 20 };
 const BL = {};
@@ -1918,7 +2082,7 @@ async function renderProgress() {
   const curve = h('div', { class: 'section' }, h('div', { class: 'row' }, h('h2', { class: 'grow', text: '流利度曲线' }),
     seg(['daily', 'academic'], PG.line, v => { PG.line = v; renderProgress(); }, v => (v === 'daily' ? '日常线' : '学术线'))));
   const nIn = RECS.list.filter(r => r.line === PG.line && inCurve(r)).length;
-  curve.append(h('p', { class: 'hint', text: '每个点是当天自由说话录音（开口说、基准录音、4/3/2 第 1 遍，每段 ≥ 20 词）的中位数。这条线上共有 ' + nIn + ' 段。' }));
+  curve.append(h('p', { class: 'hint', text: '每个点是当天自由说话录音（开口说、基准录音、4/3/2 第 1 遍、自言自语，每段 ≥ 20 词）的中位数。这条线上共有 ' + nIn + ' 段。' }));
   const charts = h('div', { class: 'charts' });
   for (const x of METRICS) {
     const pts = curvePoints(PG.line, x.k);

@@ -410,24 +410,41 @@ def fluency(words: list[list]) -> dict:
         "fillers_per100": round(n_fill / real * 100, 1) if real else 0,
         "pauses_per100": round(pauses / real * 100, 1) if real else 0,
         "mlr": round(real / len(runs), 1) if runs else 0,
-        "reliable": real >= 20 and span >= 10,
+        "reliable": real >= 20 and span >= 10 and not garbled(toks, real / span * 60 if span > 0 else 0),
+        "garbled": garbled(toks, real / span * 60 if span > 0 else 0),
     }
+
+
+def garbled(toks: list, wpm: float) -> bool:
+    """Whisper sometimes loops on bad audio ("domain domain domain ..."). Such a transcript must not reach the curves
+    or the stuck-point cards: the same word 6+ times in a row, the same 2-4 word phrase 4+ times in a row,
+    or a speech rate no speaker reaches (over 300 words a minute)."""
+    ws = [t[0] for t in toks]
+    if wpm > 300:
+        return True
+    for n in (1, 2, 3, 4):
+        need = 6 if n == 1 else 4
+        for i in range(len(ws) - n * need + 1):
+            g = ws[i : i + n]
+            if all(ws[i + k * n : i + k * n + n] == g for k in range(need)):
+                return True
+    return False
 
 
 STOP = 2.0  # s; a silence this long in a monologue counts as getting stuck
 
 
-def stop_metrics(samples: np.ndarray) -> dict:
-    """Where the speaker got stuck, from the audio itself rather than Whisper's word timings, which often stretch
-    over silences. Speech is 3+ loud 30 ms frames in a row (as in speech_onset); a quiet run of STOP seconds or more
-    is a stop, including a slow start and going quiet before the end. flow_s = seconds not spent stopped."""
+def stop_spans(samples: np.ndarray) -> list[tuple[float, float]]:
+    """Silences of STOP seconds or more, from the audio itself rather than Whisper's word timings, which often stretch
+    over silences. Speech is 3+ loud 30 ms frames in a row (as in speech_onset), so clicks and breaths stay silence."""
     loud = _loud_frames(samples)
+    if not len(loud):
+        return []
     speech = loud & np.roll(loud, -1) & np.roll(loud, -2)
     speech[-2:] = False
     for k in (1, 2):  # mark all three frames of each 3-frame run, not just the first
         speech[k:] |= speech[:-k].copy() & loud[k:]
-    dur = len(samples) / SR
-    stops, stopped, longest, run_start, i = 0, 0.0, 0.0, 0.0, 0
+    out, i = [], 0
     while i < len(speech):
         if speech[i]:
             i += 1
@@ -436,13 +453,36 @@ def stop_metrics(samples: np.ndarray) -> dict:
         while j < len(speech) and not speech[j]:
             j += 1
         if (j - i) * 0.03 >= STOP:
-            stops += 1
-            stopped += (j - i) * 0.03
-            longest = max(longest, i * 0.03 - run_start)
-            run_start = j * 0.03
+            out.append((round(i * 0.03, 2), round(j * 0.03, 2)))
         i = j
-    longest = max(longest, dur - run_start) if run_start < dur else longest
-    return {"stops": stops, "stopped_s": round(stopped, 1), "flow_s": round(max(0.0, dur - stopped), 1), "longest_s": round(longest, 1)}
+    return out
+
+
+def stop_metrics(samples: np.ndarray, spans: list[tuple[float, float]]) -> dict:
+    """Stops in a monologue, including a slow start and going quiet before the end. flow_s = seconds not spent stopped."""
+    dur = len(samples) / SR
+    stopped = sum(e - s for s, e in spans)
+    longest, run_start = 0.0, 0.0
+    for s, e in spans:
+        longest = max(longest, s - run_start)
+        run_start = e
+    if run_start < dur:
+        longest = max(longest, dur - run_start)
+    return {"stops": len(spans), "stopped_s": round(stopped, 1), "flow_s": round(max(0.0, dur - stopped), 1), "longest_s": round(longest, 1)}
+
+
+def stuck_points(words: list[list], spans: list[tuple[float, float]]) -> list[dict]:
+    """Stops in the middle of a sentence (the word before has no . ? ! other than "..."), with the words around them: where the
+    speaker got stuck looking for a way to say something. Stops before the first or after the last word are left out."""
+    out = []
+    for s, e in spans:
+        before = [w for w in words if w[2] <= s + 0.3]
+        after = [w for w in words if w[1] >= e - 0.3]
+        # Whisper writes a trailing-off word as "the..." — that is the speaker stuck, not a sentence end
+        if not before or not after or re.search(r"(?<!\.\.)[.?!]$", before[-1][0]):
+            continue
+        out.append({"at": s, "secs": round(e - s, 1), "before": " ".join(w[0] for w in before[-8:]), "after": " ".join(w[0] for w in after[:6])})
+    return out[:8]
 
 
 # ---------------------------------------------------------------- recordings archive
@@ -470,6 +510,7 @@ def save_recording(raw: bytes, filename: str, samples: np.ndarray, res: dict, te
     ext = suf if suf in (".webm", ".m4a", ".ogg", ".wav") else ".webm"
     (RECS / (rid + ext)).write_bytes(raw)
     words = word_list(res)
+    spans = stop_spans(samples) if kind in CURVE_KINDS else []
     d = {
         "id": rid,
         "t": int(time.time() * 1000),
@@ -480,9 +521,12 @@ def save_recording(raw: bytes, filename: str, samples: np.ndarray, res: dict, te
         "audio": rid + ext,
         "duration": round(len(samples) / SR, 1),
         "text": text,
-        "metrics": {**fluency(words), **(stop_metrics(samples) if kind == "solo" else {})},
+        "metrics": {**fluency(words), **(stop_metrics(samples, spans) if kind == "solo" else {})},
+        "stuck": [],
         "words": words,
     }
+    if kind in CURVE_KINDS and not d["metrics"]["garbled"]:
+        d["stuck"] = stuck_points(words, spans)
     tmp = RECS / (rid + ".tmp")
     tmp.write_text(json.dumps(d, ensure_ascii=False), "utf-8")
     tmp.replace(RECS / (rid + ".json"))
@@ -928,7 +972,7 @@ async def api_stt(audio: UploadFile = File(...), ref: str = Form(""), kind: str 
     except Exception:
         m = {}
     rec = save_recording(raw, audio.filename, samples, res, text, kind, "academic" if line == "academic" else "daily", m if isinstance(m, dict) else {})
-    return {"text": text, "words": rec["words"], "id": rec["id"], "metrics": rec["metrics"], "duration": rec["duration"], "onset": onset}
+    return {"text": text, "words": rec["words"], "id": rec["id"], "metrics": rec["metrics"], "stuck": rec["stuck"], "duration": rec["duration"], "onset": onset}
 
 
 @app.post("/api/pitch")
@@ -1081,6 +1125,48 @@ async def api_state_save(req: Request):
     tmp.write_text(json.dumps(body, ensure_ascii=False), "utf-8")
     tmp.replace(STATE_PATH)
     return {"ok": True}
+
+
+def anki_rows(srs: dict) -> list[list[str]]:
+    """One row per card for Anki's text import: front (what the review shows), back (the English), source, tags.
+    Fronts follow the app's own review: cloze sentence for word cards, Chinese plus the frame for template cards,
+    Chinese for the rest. Cards with nothing to show on the front are left out."""
+    def clean(s) -> str:
+        return re.sub(r"\s+", " ", str(s or "")).strip().replace("\t", " ")
+    rows = []
+    for v in sorted(srs.values(), key=lambda v: v.get("t", 0)):
+        en, zh = clean(v.get("en")), clean(v.get("zh"))
+        if not en:
+            continue
+        if v.get("cloze"):
+            w = re.escape(str(v["cloze"]))
+            front = re.sub(r"(^|[^A-Za-z])" + w + r"(?![A-Za-z])", r"\1_____", en, count=1) + (f"<br><small>{zh}</small>" if zh else "")
+            tag = "kaikou::word"
+        elif v.get("tpl"):
+            front = (zh or "") + f"<br><small>用句型：{clean(v['tpl'])}</small>"
+            tag = "kaikou::pattern"
+        elif zh:
+            front = zh
+            tag = "kaikou::" + ("gap" if re.match(r"(卡壳|求助|改错) · ", v.get("src", "")) else "chunk")
+        else:
+            continue
+        rows.append([front, en, clean(v.get("src")), tag])
+    return rows
+
+
+@app.post("/api/export/anki")
+def api_export_anki():
+    """Writes the chunk book to ~/Downloads as a tab-separated file Anki imports directly (File › Import).
+    Written by the server rather than downloaded by the page: the Mac app's web view does not save downloads."""
+    state = json.loads(STATE_PATH.read_text("utf-8")) if STATE_PATH.exists() else {}
+    srs = state.get("srs") or {}
+    rows = anki_rows(srs)
+    if not rows:
+        raise HTTPException(400, "语块本里还没有能导出的卡片（没有中文意思的卡片不导出）。")
+    out = Path.home() / "Downloads" / f"每天开口-Anki-{time.strftime('%Y%m%d-%H%M')}.txt"
+    head = "#separator:tab\n#html:true\n#columns:正面\t背面\t来源\tTags\n#tags column:4\n"
+    out.write_text(head + "\n".join("\t".join(r) for r in rows) + "\n", "utf-8")
+    return {"path": str(out), "name": out.name, "n": len(rows), "skipped": len(srs) - len(rows)}
 
 
 def masked(cfg: dict) -> dict:
