@@ -385,7 +385,7 @@ class Shadow {
     this.boothEl.className = 'booth' + (recOn ? ' live' : '');
     const kids = [
       h('div', { class: 'meta' }, h('span', { text: '第 ' + (i + 1) + ' / ' + this.sents.length + ' 句' }), h('span', { text: fmt(s.s) + ' – ' + fmt(s.e) })),
-      h('p', { class: 'line' + (S.prefs.blind && !rec ? ' blind' : ''), text: s.text }),
+      h('p', { class: 'line' + (S.prefs.blind && !rec ? ' blind' : '') }, wordify(s.text, { src: this.label })),
       h('div', { class: 'controls' },
         h('button', { class: 'big-play', title: '听原声', 'aria-label': '听原声', onclick: () => playSeg(this.audio, s.s, s.e) }, ic('play')),
         h('button', { class: 'big-rec' + (recOn ? ' on' : ''), onclick: () => this.record(i) }, recOn ? [h('span', { class: 'rec-dot', style: 'background:#fff' }), '说完了'] : [ic('mic'), rec ? '重新跟读' : '跟读这句']),
@@ -653,7 +653,10 @@ function buildStep3(panel, n, L, rec, st) {
   } }, st.busy.audio ? 'AI 在听' : '听发音和流利度');
   put(panel, h('div', { class: 'row' }, rb, ab), needKeyNote('text'));
   if (st.audioReview) panel.append(renderAudioReview(st.audioReview));
-  if (st.review) panel.append(renderReview(st.review, L));
+  if (st.review) {
+    panel.append(h('div', { class: 'result' }, h('h3', { text: '你说的（点词可查）' }),
+      h('div', { class: 'say' }, h('p', {}, wordify(st.talk, { mine: true, src: '开口说 · ' + L.t })))), renderReview(st.review, L));
+  }
   panel.append(nextStepButton(n, 3, rec, 'sp', '只说不点评，标记完成'));
 }
 const SPT = { elapsed: 0, iv: null };
@@ -678,15 +681,15 @@ function renderCard(box, c, L) {
   box.append(h('div', { class: 'row' }, h('p', { class: 'grow', text: c.meaning_zh }), c.register ? h('span', { class: 'tag', text: ({ informal: '口语', neutral: '通用', slang: '俚语', formal: '正式' })[c.register] || c.register }) : null));
   if (c.note_zh) box.append(h('p', { class: 'hint', text: c.note_zh }));
   const list = h('div');
-  for (const e of c.examples || []) list.append(h('div', { class: 'ex' }, sayBtn(e.en), h('span', { class: 'en', text: e.en }), chunkBtn(e.en, e.zh, '例句 · ' + L.x), h('span', { class: 'zh', text: e.zh })));
+  for (const e of c.examples || []) list.append(h('div', { class: 'ex' }, sayBtn(e.en), h('span', { class: 'en' }, wordify(e.en, { src: '例句 · ' + L.x })), chunkBtn(e.en, e.zh, '例句 · ' + L.x), h('span', { class: 'zh', text: e.zh })));
   box.append(list);
 }
 function renderReview(r, L) {
   const box = h('div', { class: 'result' }, h('h3', { text: '内容点评' }));
   box.append(h('div', { class: 'row' }, r.band ? h('span', { class: 'tag', text: '大约 ' + r.band + ' 分' }) : null, r.used_target ? h('span', { class: 'tag good', text: '用上了「' + L.x + '」' }) : null));
   if (r.comment_zh) box.append(h('p', { text: esc(r.comment_zh) }));
-  if (r.corrected) box.append(h('div', {}, h('h3', { text: '改正版' }), h('div', { class: 'say' }, h('p', { text: esc(r.corrected) }), sayBtn(esc(r.corrected)))));
-  if (r.natural) box.append(h('div', {}, h('h3', { text: '更地道的说法 · 拿来跟读' }), h('div', { class: 'say' }, h('p', { text: esc(r.natural) }), sayBtn(esc(r.natural)))));
+  if (r.corrected) box.append(h('div', {}, h('h3', { text: '改正版' }), h('div', { class: 'say' }, h('p', {}, wordify(esc(r.corrected), { src: '点评 · ' + L.t })), sayBtn(esc(r.corrected)))));
+  if (r.natural) box.append(h('div', {}, h('h3', { text: '更地道的说法 · 拿来跟读' }), h('div', { class: 'say' }, h('p', {}, wordify(esc(r.natural), { src: '点评 · ' + L.t })), sayBtn(esc(r.natural)))));
   if (Array.isArray(r.fixes) && r.fixes.length) { const f = h('div', { class: 'card' }, h('h3', { text: '要改的地方' })); for (const x of r.fixes.slice(0, 5)) f.append(h('div', { class: 'fix' }, h('div', {}, h('s', { text: esc(x.original) }), ' → ', h('b', { text: esc(x.better) })), h('span', { class: 'hint', text: esc(x.why_zh) }))); box.append(f); }
   if (Array.isArray(r.chunks) && r.chunks.length) { const p = h('div', {}, h('h3', { text: '这个话题用得上的语块' })); for (const x of r.chunks.slice(0, 4)) p.append(h('div', { class: 'ex' }, sayBtn(esc(x.en)), h('span', { class: 'en', text: esc(x.en) }), chunkBtn(esc(x.en), esc(x.zh), '话题 · ' + L.t), h('span', { class: 'zh', text: esc(x.zh) }))); box.append(p); }
   const errN = errNotice(r.errKeys); if (errN) box.append(errN);
@@ -702,6 +705,143 @@ function renderAudioReview(r) {
 }
 function goLesson(n) { n = Math.max(1, Math.min(N, n)); stopEverything(); S.prefs.cur = n; if (!CHAT.started) CHAT.lesson = n; save(); renderHeader(); renderToday(); window.scrollTo({ top: 0 }); }
 
+/* ================= WORD CARD (点词词典) ================= */
+let WPOP = null, WEL = null, WPTOK = 0;
+function wordCardOnKey(e) { if (e.key === 'Escape') closeWordCard(); }
+function closeWordCard() {
+  WPTOK++;
+  if (WPOP) { WPOP.remove(); WPOP = null; }
+  WEL = null;
+  document.removeEventListener('keydown', wordCardOnKey);
+  window.removeEventListener('scroll', closeWordCard);
+  window.removeEventListener('resize', positionWordPop);
+}
+function positionWordPop() {
+  if (!WPOP || !WEL) return;
+  if (window.innerWidth < 600) { WPOP.style.left = ''; WPOP.style.top = ''; WPOP.style.maxHeight = ''; return; }
+  // never cover the clicked word: take the side with more room and scroll inside the card if it still does not fit
+  const pad = 8, r = WEL.getBoundingClientRect(), w = WPOP.offsetWidth || 360;
+  const roomBelow = window.innerHeight - r.bottom - 8 - pad, roomAbove = r.top - 8 - pad;
+  WPOP.style.maxHeight = '';
+  const natural = WPOP.offsetHeight || 0, below = natural <= roomBelow || roomBelow >= roomAbove;
+  const hh = Math.min(natural, below ? roomBelow : roomAbove);
+  WPOP.style.maxHeight = Math.max(120, hh) + 'px';
+  const left = Math.max(pad, Math.min(r.left + r.width / 2 - w / 2, window.innerWidth - w - pad));
+  const top = below ? r.bottom + 8 : r.top - 8 - hh;
+  WPOP.style.left = Math.round(left) + 'px';
+  WPOP.style.top = Math.round(top) + 'px';
+}
+/* Sentence with the first whole-word match of `w` wrapped in <mark>. */
+function markWord(text, w) {
+  const box = h('span', { class: 'wordified' }), s = String(text ?? ''), word = String(w ?? '');
+  const m = word ? new RegExp('(^|[^A-Za-z])(' + word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')(?![A-Za-z])', 'i').exec(s) : null;
+  if (!m) { box.textContent = s; return box; }
+  const at = m.index + m[1].length;
+  if (at) box.append(s.slice(0, at));
+  box.append(h('mark', { text: m[2] }));
+  if (at + m[2].length < s.length) box.append(s.slice(at + m[2].length));
+  return box;
+}
+function openWordCard(el) {
+  closeWordCard();
+  const tok = ++WPTOK;
+  const word = String(el.textContent || '').trim();
+  const sentence = el.dataset.s || '', src = el.dataset.src || '', isMine = el.dataset.mine === '1';
+  const phon = h('span', { class: 'wordpop-phon' });
+  const meta = h('div', { class: 'wordpop-meta' });
+  const dict = h('div', { class: 'wordpop-dict' }, h('p', { class: 'thinking', text: '查词…' }));
+  const senseBox = h('div', { class: 'wordpop-sense' }, h('p', { class: 'thinking', text: 'AI 在看这句…' }));
+  let entry = null, senseNow = '';
+  const addBtn = h('button', { class: 'btn' });
+  const paintAdd = () => {
+    const on = !!findWordCard(word, sentence);
+    addBtn.textContent = on ? '已加入复习 · 再点移出' : '加入复习';
+    addBtn.classList.toggle('primary', !on);
+    addBtn.classList.toggle('done', on);
+  };
+  addBtn.onclick = () => {
+    toggleWordCard(word, sentence, { sense: senseNow, lemma: entry?.lemma?.w || entry?.w || '', src, mine: isMine });
+    paintAdd();
+  };
+  paintAdd();
+
+  const box = h('div', { class: 'wordpop', role: 'dialog', 'aria-label': '词卡' },
+    h('div', { class: 'wordpop-head' },
+      h('b', { class: 'wordpop-word', text: word }), phon, sayBtn(word),
+      h('span', { class: 'grow' }),
+      h('button', { class: 'btn ghost icon-btn', title: '关闭', 'aria-label': '关闭', onclick: closeWordCard }, ic('x'))),
+    meta, dict,
+    h('div', { class: 'wordpop-sec' }, h('h3', { class: 'sub-h', text: '在这句里' }), senseBox),
+    h('div', { class: 'wordpop-sec' },
+      h('h3', { class: 'sub-h', text: isMine ? '你说的' : '原句' }),
+      h('div', { class: 'row wordpop-sent' }, h('p', { class: 'grow' }, markWord(sentence, word)), sentence ? sayBtn(sentence) : null)),
+    h('div', { class: 'wordpop-foot' }, h('div', { class: 'row grow' }, addBtn, h('span', { class: 'hint', text: '复习时看挖空的句子，把整句说出来' }))));
+
+  WPOP = box; WEL = el;
+  document.body.append(box);
+  positionWordPop();
+  document.addEventListener('keydown', wordCardOnKey);
+  window.addEventListener('scroll', closeWordCard, { passive: true });
+  window.addEventListener('resize', positionWordPop);
+
+  const paintDict = () => {
+    meta.replaceChildren();
+    if (entry?.form_zh) meta.append(h('p', { class: 'small muted', text: word + '：' + entry.form_zh }));
+    const tags = (Array.isArray(entry?.tags) ? entry.tags : []).filter(Boolean);
+    if (tags.length) meta.append(h('div', { class: 'wordpop-tags' }, tags.map(t => h('span', { class: 'tag', text: String(t) }))));
+    if (!entry) dict.replaceChildren(h('p', { class: 'hint', text: '离线词典里没有这个词' }));
+    else {
+      const defs = (Array.isArray(entry.zh) && entry.zh.length ? entry.zh : (Array.isArray(entry.lemma?.zh) ? entry.lemma.zh : [])).slice(0, 4);
+      if (defs.length) dict.replaceChildren(h('ol', { class: 'wordpop-defs' }, defs.map(t => h('li', { text: String(t) }))));
+      else dict.replaceChildren();
+    }
+    positionWordPop();
+  };
+
+  async function loadSense() {
+    senseBox.replaceChildren(h('p', { class: 'thinking', text: 'AI 在看这句…' }));
+    try {
+      const r = await wordSense(word, sentence, entry);
+      if (tok !== WPTOK) return;
+      senseNow = r.sense || '';
+      const kids = [];
+      if (r.sense || r.pos) kids.push(h('p', { class: 'wordpop-gloss' }, r.sense ? h('b', { text: r.sense }) : null, r.pos ? h('span', { class: 'small muted', text: ' ' + r.pos }) : null));
+      if (r.note) kids.push(h('p', { class: 'hint warn', text: r.note }));
+      for (const c of (r.colls || []).slice(0, 3)) kids.push(h('div', { class: 'wordpop-coll' },
+        h('span', { class: 'en', text: c.en }), c.zh ? h('span', { class: 'zh', text: c.zh }) : null, sayBtn(c.en), chunkBtn(c.en, c.zh, '搭配 · ' + word)));
+      if (!kids.length) kids.push(h('p', { class: 'hint', text: 'AI 没给出讲解。' }));
+      senseBox.replaceChildren(...kids);
+    } catch (e) {
+      if (tok !== WPTOK) return;
+      senseBox.replaceChildren(h('p', { class: 'err' }, e.message, ' ', h('button', { class: 'btn ghost', onclick: loadSense }, '重试')));
+    }
+    positionWordPop();
+  }
+
+  dictLookup(word).then(j => {
+    if (tok !== WPTOK) return;
+    entry = j;
+    if (entry?.phonetic) phon.textContent = '/' + entry.phonetic + '/';
+    paintDict();
+  }).catch(e => {
+    if (tok !== WPTOK) return;
+    dict.replaceChildren(h('p', { class: 'err', text: e.message }));
+    positionWordPop();
+  });
+  loadSense();
+
+  return box;
+}
+document.addEventListener('click', e => {
+  const w = e.target.closest?.('.w');
+  if (w) {
+    if (window.getSelection?.().toString()) return;
+    openWordCard(w);
+    return;
+  }
+  if (WPOP && !WPOP.contains(e.target)) closeWordCard();
+});
+
 /* ================= CHUNKS (语块本) ================= */
 const RV = { on: false, id: null, shown: false, heard: null, busy: false, done: 0 };
 function renderChunks() {
@@ -713,18 +853,20 @@ function renderChunks() {
     if (!RV.id || !S.srs[RV.id] || S.srs[RV.id].due > Date.now()) { RV.id = due[0]?.[0] || null; RV.shown = false; RV.heard = null; RV.words = null; }
     if (!RV.id) { RV.on = false; frag.push(h('div', { class: 'next-cta' }, h('span', { text: '今天的复习完成了，一共 ' + RV.done + ' 条。' }), h('button', { class: 'btn', onclick: () => { RV.done = 0; renderChunks(); } }, '好'))); }
     else {
-      const v = S.srs[RV.id];
+      const v = S.srs[RV.id], isWord = !!v.cloze;
       const card = h('div', { class: 'review' },
         h('div', { class: 'src', text: '还剩 ' + due.length + ' 条 · ' + (v.src || '') }),
-        h('div', { class: 'q', text: v.zh || '（没有中文意思）先回忆，再说出英文' }));
+        isWord
+          ? h('div', { class: 'q' }, h('div', { class: 'cloze', text: clozeOf(v.en, v.cloze) }), v.zh ? h('div', { class: 'small muted' }, v.zh) : null)
+          : h('div', { class: 'q', text: v.zh || '（没有中文意思）先回忆，再说出英文' }));
       if (!RV.shown) {
-        card.append(h('p', { class: 'hint', text: '先开口说出英文，再看答案。说出来比在心里想更能记住。' }),
+        card.append(h('p', { class: 'hint', text: isWord ? '看挖空的句子，把整句说出来，再看答案。' : '先开口说出英文，再看答案。说出来比在心里想更能记住。' }),
           h('div', { class: 'row' },
             micButton('rev', async blob => { RV.busy = true; renderChunks(); try { const j = await sttFull(blob, v.en, { kind: 'review', meta: { ref: v.en } }); RV.heard = j.text; RV.words = j.words; } catch (e) { alertBox(e.message); } RV.busy = false; RV.shown = true; renderChunks(); say(v.en); }, ['说出来', '说完了']),
             h('button', { class: 'btn', onclick: () => { RV.shown = true; renderChunks(); say(v.en); } }, '直接看答案')));
         if (RV.busy) card.append(h('p', { class: 'thinking', text: '识别中…' }));
       } else {
-        card.append(h('div', { class: 'row' }, h('div', { class: 'a', text: v.en }), sayBtn(v.en)));
+        card.append(h('div', { class: 'row' }, h('div', { class: 'a' }, isWord ? markWord(v.en, v.cloze) : v.en), sayBtn(v.en)));
         if (RV.heard != null) card.append(diffView(v.en, RV.heard, RV.words));
         card.append(h('div', { class: 'grades' }, [['忘了', 0], ['模糊', 1], ['想起来了', 2], ['脱口而出', 3]].map(([t, g]) => h('button', { class: 'btn', onclick: () => { S.srs[RV.id] = schedule(v, g); RV.done++; markDay('rv'); RV.id = null; save(); renderChunks(); } }, t, h('small', { text: ivlText(schedule(v, g)) })))));
       }
@@ -744,7 +886,11 @@ function renderChunks() {
   const list = h('div', { class: 'saved srs-list' });
   for (const [id, v] of items) list.append(h('div', { class: 'saved-item' },
     h('span', { class: 'en', text: v.en }),
-    h('span', { class: 'zh' }, [v.zh, v.src].filter(Boolean).join(' · '), h('span', { class: 'due', text: '　' + (v.due <= Date.now() ? '待复习' : ymd(new Date(v.due)) + ' 复习') })),
+    h('span', { class: 'zh' },
+      v.cloze ? h('span', { class: 'tag', text: '词卡' }) : null,
+      v.cloze && v.mine ? h('span', { class: 'tag', text: '我说的' }) : null,
+      [v.zh, v.src].filter(Boolean).join(' · '),
+      h('span', { class: 'due', text: '　' + (v.due <= Date.now() ? '待复习' : ymd(new Date(v.due)) + ' 复习') })),
     h('div', { class: 'tools' }, sayBtn(v.en), h('button', { class: 'btn ghost icon-btn', title: '删除', 'aria-label': '删除', onclick: () => { delete S.srs[id]; save(); renderChunks(); } }, ic('x')))));
   if (!items.length) list.append(h('p', { class: 'hint', text: '还没有语块。' }));
   frag.push(h('div', { class: 'section' }, h('h2', { text: '全部语块 · ' + items.length }), list));
@@ -973,8 +1119,8 @@ function renderChat() {
   const log = h('div', { class: 'log' });
   if (!CHAT.started) log.append(h('div', { class: 'empty' }, h('p', { text: '选一个场景，AI 先开口。你点「说」用英文回答，录音会自动转成文字，每一轮它会顺手帮你改一句。' }), h('div', { style: 'margin-top:14px' }, h('button', { class: 'btn primary', onclick: startChat }, '开始对话'))));
   for (const v of CHAT.view) {
-    if (v.role === 'ai') { const zh = h('div', { class: 'zh', hidden: true, text: v.zh }); const sb = sayBtn(v.en); sb.classList.add('speak-btn'); log.append(h('div', { class: 'msg ai' }, h('div', { class: 'bubble', text: v.en }), h('div', { class: 'tools' }, sb, v.zh ? h('button', { class: 'btn ghost small', onclick: () => { zh.hidden = !zh.hidden; } }, '译') : null), zh)); }
-    else log.append(h('div', { class: 'msg me' }, h('div', { class: 'bubble', text: v.text }), v.fb ? h('div', { class: 'fb' }, h('div', { class: 'row' }, h('span', { class: 'better grow', text: v.fb.better }), sayBtn(v.fb.better), chunkBtn(v.fb.better, '', '对话 · ' + SCEN[CHAT.scen].label)), v.fb.note ? h('span', { class: 'small', text: v.fb.note }) : null) : null));
+    if (v.role === 'ai') { const zh = h('div', { class: 'zh', hidden: true, text: v.zh }); const sb = sayBtn(v.en); sb.classList.add('speak-btn'); log.append(h('div', { class: 'msg ai' }, h('div', { class: 'bubble' }, wordify(v.en, { src: '对话' })), h('div', { class: 'tools' }, sb, v.zh ? h('button', { class: 'btn ghost small', onclick: () => { zh.hidden = !zh.hidden; } }, '译') : null), zh)); }
+    else log.append(h('div', { class: 'msg me' }, h('div', { class: 'bubble' }, wordify(v.text, { mine: true, src: '对话' })), v.fb ? h('div', { class: 'fb' }, h('div', { class: 'row' }, h('span', { class: 'better grow', text: v.fb.better }), sayBtn(v.fb.better), chunkBtn(v.fb.better, '', '对话 · ' + SCEN[CHAT.scen].label)), v.fb.note ? h('span', { class: 'small', text: v.fb.note }) : null) : null));
   }
   if (CHAT.busy) log.append(h('p', { class: 'thinking', text: 'AI 正在想…' }));
   if (CHAT.err) log.append(h('p', { class: 'err', text: CHAT.err }));
@@ -1097,7 +1243,7 @@ function recCol(r, label, base) {
     h('div', { class: 'row' }, h('b', { class: 'grow', text: label }), h('span', { class: 'hint', text: r.date })),
     h('audio', { controls: true, preload: 'none', src: recAudio(r.id) }),
     metricsView(r.metrics, base),
-    h('details', {}, h('summary', { text: '看转写' }), h('p', { class: 'small', text: r.text || '（没识别出文字）' })));
+    h('details', {}, h('summary', { text: '看转写' }), h('p', { class: 'small' }, r.text ? wordify(r.text, { mine: true, src: KIND_ZH[r.kind] || '' }) : '（没识别出文字）')));
 }
 function baselineCard(b) {
   const rs = baseRecs(b), st = BL[b.id] || (BL[b.id] = { busy: false, pick: null }), owner = 'bl-' + b.id, on = Rec.isOn(owner), due = baseDue(b);
@@ -1152,7 +1298,7 @@ async function renderProgress() {
       h('div', { class: 'row' }, h('b', { text: KIND_ZH[r.kind] || r.kind }), h('span', { class: 'tag', text: r.line === 'academic' ? '学术线' : '日常线' }),
         h('span', { class: 'hint grow', text: r.date + ' ' + z2(d.getHours()) + ':' + z2(d.getMinutes()) + ' · ' + Math.round(r.duration) + ' 秒' + (m?.reliable ? ' · ' + Math.round(m.wpm) + ' 词/分' : '') })),
       recTopic(r) ? h('p', { class: 'small muted', text: recTopic(r) }) : null,
-      h('details', {}, h('summary', { text: '听 / 看转写' }), h('audio', { controls: true, preload: 'none', src: recAudio(r.id) }), h('p', { class: 'small', text: r.text || '（没识别出文字）' }), metricsView(m)));
+      h('details', {}, h('summary', { text: '听 / 看转写' }), h('audio', { controls: true, preload: 'none', src: recAudio(r.id) }), h('p', { class: 'small' }, r.text ? wordify(r.text, { mine: true, src: KIND_ZH[r.kind] || '' }) : '（没识别出文字）'), metricsView(m)));
   }));
   if (!all.length) list.append(h('p', { class: 'hint', text: '还没有录音。今天课里的「开口说」、4/3/2、基准录音和 AI 对话，录完都会自动存在这里。' }));
   frag.push(h('div', { class: 'section' }, h('div', { class: 'row' }, h('h2', { class: 'grow', text: '录音存档 · ' + all.length }),

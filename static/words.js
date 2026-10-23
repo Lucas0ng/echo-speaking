@@ -4,7 +4,7 @@
 GET /api/dict?w=cooks → { found: true, w, phonetic, zh: [...], tags: [...], frq, form_zh, lemma: null | { w, phonetic, zh, tags } }; { found: false } when unknown.
 dictLookup resolves to that object, or null for an unknown word.
 Word cards live in the same spaced-repetition store as chunks (S.srs), with extra fields:
-  { en: the whole sentence, zh: 'cook · 做饭', cloze: the word as written in the sentence, word: dictionary form, mine: the learner said this sentence }
+  { en: the whole sentence, zh: '做饭 · c…' (sense + first letter, never the word itself), cloze: the word as written in the sentence, word: dictionary form, mine: the learner said this sentence }
 Review shows the sentence with the word blanked plus zh; the learner says the WHOLE sentence.
 */
 const DICT = new Map(), SENSE = new Map();
@@ -54,7 +54,8 @@ function toggleWordCard(w, sentence, { sense = '', lemma = '', src = '', mine = 
   if (f) delete S.srs[f[0]];
   else {
     const id = 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), word = wordKey(lemma || w);
-    S.srs[id] = { en: sentence, zh: word + (sense ? ' · ' + sense : ''), src: src || (mine ? '我说的' : ''), cloze: w, word, mine: !!mine, t: Date.now(), due: Date.now(), ivl: 0, ease: 2.5, reps: 0 };
+    // the hint must not give the answer away: Chinese sense plus the first letter only
+    S.srs[id] = { en: sentence, zh: (sense ? sense + ' · ' : '') + w[0] + '…', src: src || (mine ? '我说的' : ''), cloze: w, word, mine: !!mine, t: Date.now(), due: Date.now(), ivl: 0, ease: 2.5, reps: 0 };
   }
   save(); updateBadge(); return !f;
 }

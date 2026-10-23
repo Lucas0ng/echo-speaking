@@ -361,3 +361,32 @@ audio.native { width: 100%; height: 40px; }
   .err-practice .err-drill { font-size: 24px; }
   .err-chart { max-width: 100%; }
 }
+
+/* ---------- word card (点词词典) ---------- */
+.w { cursor: pointer; }
+.w:hover { text-decoration: underline dotted; text-decoration-color: var(--accent); text-underline-offset: 3px; }
+.wordpop { position: fixed; z-index: 30; width: 360px; max-width: calc(100vw - 16px); max-height: 70vh; overflow-y: auto; background: var(--surface); color: var(--ink); border-radius: var(--r-lg); box-shadow: var(--elev-hi); padding: 16px 18px; display: grid; gap: 12px; font-size: 14px; }
+.wordpop-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.wordpop-word { font: 500 24px/1.2 var(--f-text); letter-spacing: -.01em; }
+.wordpop-phon { font-size: 13px; color: var(--muted); }
+.wordpop-meta { display: grid; gap: 6px; }
+.wordpop-meta:empty { display: none; }
+.wordpop-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+.wordpop-defs { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; color: var(--ink-2); }
+.wordpop-sec { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.wordpop-gloss { font-size: 15px; }
+.wordpop-coll { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 0 8px; align-items: center; padding: 6px 0; border-top: 1px dashed var(--line); }
+.wordpop-coll .en { font: 16px/1.4 var(--f-text); min-width: 0; overflow-wrap: anywhere; }
+.wordpop-coll .zh { grid-column: 1; grid-row: 2; font-size: 12px; color: var(--muted); }
+.wordpop-coll > .btn { grid-row: 1 / span 2; }
+.wordpop-sent { align-items: flex-start; }
+.wordpop-sent p { font: 17px/1.55 var(--f-text); }
+.wordpop mark, .review .a mark { background: var(--accent-soft); color: inherit; border-radius: 3px; padding: 0 2px; }
+.wordpop-foot { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 0 16px; margin-bottom: -16px; border-top: 1px solid var(--line); position: sticky; bottom: -16px; background: var(--surface); }
+.wordpop-foot .hint { font-size: 12px; }
+.saved-item .zh .tag { margin-right: 6px; }
+.review .q .cloze { overflow-wrap: anywhere; }
+.review .q .small { display: block; margin-top: 8px; font-weight: 400; }
+@media (max-width: 599px) {
+  .wordpop { left: 0; right: 0; top: auto; bottom: 0; width: auto; max-width: none; max-height: 70vh; border-radius: var(--r-lg) var(--r-lg) 0 0; padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+}

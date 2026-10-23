@@ -12,9 +12,11 @@ import json
 import queue
 import re
 import secrets
+import sqlite3
 import threading
 import time
 import wave
+from functools import lru_cache
 from pathlib import Path
 
 import httpx
@@ -482,6 +484,159 @@ def log_usage(p: dict, usage: dict | None) -> None:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
+# ---------------------------------------------------------------- offline dictionary (ECDICT)
+DICT_DB = DATA / "dict" / "ecdict.sqlite"
+DICT_MISSING = "离线词典还没建好：在项目文件夹运行 .venv/bin/python tools/build_dict.py"
+DICT_TAGS = {
+    "zk": "中考",
+    "gk": "高考",
+    "cet4": "四级",
+    "cet6": "六级",
+    "ky": "考研",
+    "toefl": "托福",
+    "ielts": "雅思",
+    "gre": "GRE",
+}
+FORM_TYPES = {
+    "p": "过去式",
+    "d": "过去分词",
+    "i": "现在分词",
+    "3": "第三人称单数",
+    "s": "复数",
+    "r": "比较级",
+    "t": "最高级",
+}
+FORM_TYPE_ORDER = ("p", "d", "i", "3", "s", "r", "t")
+
+
+def _dict_norm(w: str) -> str:
+    """小写、统一撇号、去掉首尾非字母字符，再去掉结尾的 's。"""
+    w = (w or "").lower().replace("’", "'")
+    while w and not w[0].isalpha():
+        w = w[1:]
+    while w and not w[-1].isalpha():
+        w = w[:-1]
+    if w.endswith("'s"):
+        w = w[:-2]
+    return w
+
+
+def _dict_exchange(exchange: str) -> dict[str, str]:
+    out = {}
+    for part in (exchange or "").split("/"):
+        if ":" in part:
+            typ, val = part.split(":", 1)
+            out.setdefault(typ.strip(), val.strip())
+    return out
+
+
+def _dict_types(raw: str) -> list[str]:
+    got = {ch for ch in (raw or "") if ch in FORM_TYPES}
+    return [t for t in FORM_TYPE_ORDER if t in got]
+
+
+def _dict_summary(row) -> dict:
+    zh = [x.strip() for x in (row[2] or "").split("\\n")]
+    return {
+        "w": row[0],
+        "phonetic": row[1] or "",
+        "zh": [x for x in zh if x][:6],
+        "tags": [DICT_TAGS[t] for t in (row[3] or "").split() if t in DICT_TAGS],
+    }
+
+
+def _dict_rows(con: sqlite3.Connection, k: str) -> list:
+    rows = con.execute(
+        "SELECT word, phonetic, translation, tag, frq, exchange FROM words "
+        "WHERE k = ? ORDER BY rowid",
+        (k,),
+    ).fetchall()
+    # 同一个 k 下优先词本身全小写的行，再优先有词频且词频更小的行
+    rows.sort(key=lambda r: (0 if r[0] == r[0].lower() else 1, 0 if (r[4] or 0) > 0 else 1, r[4] or 0))
+    return rows
+
+
+def _dict_from_forms(con: sqlite3.Connection, form: str):
+    """在 forms 里找 form 的原形；多个候选时取原形词频非 0 且最小的。"""
+    best = None
+    for lemma, types in con.execute(
+        "SELECT lemma, types FROM forms WHERE form = ? ORDER BY rowid", (form,)
+    ).fetchall():
+        rows = _dict_rows(con, lemma.lower())
+        if not rows:
+            continue
+        row = rows[0]
+        frq = int(row[4] or 0)
+        key = (0 if frq > 0 else 1, frq)
+        if best is None or key < best[0]:
+            best = (key, lemma, row, types)
+    return best
+
+
+def _dict_lookup(con: sqlite3.Connection, norm: str) -> dict:
+    rows = _dict_rows(con, norm)
+    direct = rows[0] if rows else None
+
+    lemma_name, lemma_row, types_raw = "", None, ""
+    if direct:
+        exchange = _dict_exchange(direct[5])
+        lemma_name = exchange.get("0", "")
+        types_raw = exchange.get("1", "")
+
+    if lemma_name:
+        lemma_rows = _dict_rows(con, lemma_name.lower())
+        if lemma_rows:
+            lemma_row = lemma_rows[0]
+        if lemma_name.lower() == norm:
+            lemma_name, lemma_row = "", None
+    else:
+        hit = _dict_from_forms(con, norm)
+        if hit and hit[1].lower() != norm:
+            _, lemma_name, lemma_row, types_raw = hit
+
+    if lemma_name and lemma_row is None:
+        lemma_name = ""
+
+    base = direct or lemma_row
+    if base is None:
+        return {"found": False}
+
+    summary = _dict_summary(base)
+    out = {
+        "found": True,
+        "w": summary["w"],
+        "phonetic": summary["phonetic"],
+        "zh": summary["zh"],
+        "tags": summary["tags"],
+        "frq": int(base[4] or 0),
+    }
+
+    types = _dict_types(types_raw) if lemma_name else []
+    out["form_zh"] = (
+        f"{lemma_row[0]} 的" + "/".join(FORM_TYPES[t] for t in types) if lemma_row and types else ""
+    )
+    out["lemma"] = _dict_summary(lemma_row) if lemma_row else None
+    return out
+
+
+@lru_cache(maxsize=4096)
+def _dict_cached(norm: str) -> dict:
+    if not DICT_DB.exists():
+        raise HTTPException(503, DICT_MISSING)
+    con = sqlite3.connect(DICT_DB.resolve().as_uri() + "?mode=ro", uri=True)
+    try:
+        return _dict_lookup(con, norm)
+    finally:
+        con.close()
+
+
+def dict_lookup(w: str) -> dict:
+    norm = _dict_norm(w)
+    if not norm:
+        return {"found": False}
+    return _dict_cached(norm)
+
+
 # ---------------------------------------------------------------- LLM proxy
 def provider(name: str) -> dict:
     p = CFG["providers"].get(name)
@@ -552,6 +707,12 @@ async def chat_completion(p: dict, messages: list, want_json: bool, stream: bool
 
 # ---------------------------------------------------------------- app
 app = FastAPI()
+
+
+@app.get("/api/dict")
+def api_dict(w: str = ""):
+    """Offline ECDICT entry for a word, with its dictionary form when it is inflected."""
+    return dict_lookup(w)
 
 
 @app.get("/api/lessons")
