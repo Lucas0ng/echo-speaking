@@ -414,8 +414,39 @@ def fluency(words: list[list]) -> dict:
     }
 
 
+STOP = 2.0  # s; a silence this long in a monologue counts as getting stuck
+
+
+def stop_metrics(samples: np.ndarray) -> dict:
+    """Where the speaker got stuck, from the audio itself rather than Whisper's word timings, which often stretch
+    over silences. Speech is 3+ loud 30 ms frames in a row (as in speech_onset); a quiet run of STOP seconds or more
+    is a stop, including a slow start and going quiet before the end. flow_s = seconds not spent stopped."""
+    loud = _loud_frames(samples)
+    speech = loud & np.roll(loud, -1) & np.roll(loud, -2)
+    speech[-2:] = False
+    for k in (1, 2):  # mark all three frames of each 3-frame run, not just the first
+        speech[k:] |= speech[:-k].copy() & loud[k:]
+    dur = len(samples) / SR
+    stops, stopped, longest, run_start, i = 0, 0.0, 0.0, 0.0, 0
+    while i < len(speech):
+        if speech[i]:
+            i += 1
+            continue
+        j = i
+        while j < len(speech) and not speech[j]:
+            j += 1
+        if (j - i) * 0.03 >= STOP:
+            stops += 1
+            stopped += (j - i) * 0.03
+            longest = max(longest, i * 0.03 - run_start)
+            run_start = j * 0.03
+        i = j
+    longest = max(longest, dur - run_start) if run_start < dur else longest
+    return {"stops": stops, "stopped_s": round(stopped, 1), "flow_s": round(max(0.0, dur - stopped), 1), "longest_s": round(longest, 1)}
+
+
 # ---------------------------------------------------------------- recordings archive
-CURVE_KINDS = {"talk", "baseline", "r432"}  # free monologues: the only kinds whose metrics go on the curves
+CURVE_KINDS = {"talk", "baseline", "r432", "solo"}  # free monologues: the only kinds whose metrics go on the curves
 KINDS = CURVE_KINDS | {"chat", "shadow", "chunk", "review", "pron"}
 REC_INDEX: dict[str, dict] = {}
 
@@ -449,7 +480,7 @@ def save_recording(raw: bytes, filename: str, samples: np.ndarray, res: dict, te
         "audio": rid + ext,
         "duration": round(len(samples) / SR, 1),
         "text": text,
-        "metrics": fluency(words),
+        "metrics": {**fluency(words), **(stop_metrics(samples) if kind == "solo" else {})},
         "words": words,
     }
     tmp = RECS / (rid + ".tmp")
