@@ -5,7 +5,7 @@ S.errs[key] = {
   key, cat, title_zh, rule_zh,
   status: 'active' | 'queued' | 'done',   // at most ERR_MAX_ACTIVE active at once
   seen: [{ t, said, better, src }],        // each time the AI found it in free speech
-  tries: [{ t, zh, said, ok, note, better, due }],  // deploy / recheck attempts; due = was it a scheduled recheck
+  tries: [{ t, zh, said, ok, note, better, due }],  // deploy / recheck attempts; due = was it a scheduled recheck; ok null = unsure, not counted
   drills: [{ zh, en }],                    // Chinese prompts whose English needs this pattern (made on first practice)
   due: null | ms,   // null: needs a deploy now (fresh, or failed); otherwise when the 48 h recheck opens
   t, act, grad,     // created, activated, graduated
@@ -68,21 +68,38 @@ function errNextDrill(e) {
   const last = zh => Math.max(0, ...e.tries.filter(t => t.zh === zh).map(t => t.t));
   return [...(e.drills || [])].sort((a, b) => last(a.zh) - last(b.zh))[0] || null;
 }
-/* Ask the AI whether the spoken answer got this pattern right. */
+/* Words of a sentence, lowercased, for checking that a quote really comes from it. */
+const errWords = s => String(s || '').toLowerCase().replace(/[’‘]/g, "'").replace(/[^a-z0-9' ]+/g, ' ').trim().split(/\s+/).filter(Boolean);
+/* Judge a spoken answer: local rules first, then the AI, then a check on the AI's answer.
+   unsure = this attempt says nothing either way (too short, not English, pattern not used, or a pass the AI could not
+   point at in their words), so it does not move the fix cycle; only a clear pass or a clear miss does. */
 async function errJudge(e, drill, said) {
+  const unsure = note => ({ ok: false, unsure: true, note, better: '' });
+  if (/[\u3400-\u9fff]/.test(said)) return unsure('识别出来有中文。用英文再说一次。');
+  const words = errWords(said);
+  if (words.length < 3) return unsure('太短了，听不出这个说法用得对不对。说一句完整的。');
   const j = await aiText(LEARNER + '\n\nThe learner is fixing a recurring error: ' + e.title_zh + '. Rule: ' + e.rule_zh
     + '\nThey were asked to say this in English: ' + drill.zh + '\nOne good answer: ' + drill.en
     + '\nSpeech-to-text of what they said (ignore punctuation, capitalisation and obvious mishearings; a different sentence is fine if it is correct):\n"' + said + '"\n'
-    + 'Judge ONLY whether they used this pattern correctly. If the sentence avoids the pattern entirely, that is not a pass. Other mistakes do not fail it.\n'
-    + 'JSON: {"ok": true or false, "note_zh": "中文一句：这个点对不对、为什么；有别的明显错误可顺带提一句", "better": "their sentence, corrected"}');
-  return { ok: !!j?.ok, note: String(j?.note_zh || ''), better: String(j?.better || '') };
+    + 'Judge ONLY this pattern. Other mistakes do not fail it.\n'
+    + 'JSON: {"used": true if their sentence contains a place where this pattern is needed, false if it avoids the pattern entirely, '
+    + '"ok": true if every such place is right, "evidence": "the words from THEIR sentence where the pattern appears, copied exactly, 1–6 words", '
+    + '"note_zh": "中文一句：这个点对不对、为什么；有别的明显错误可顺带提一句", "better": "their sentence, corrected"}');
+  const note = String(j?.note_zh || ''), better = String(j?.better || '');
+  if (j?.used === false) return { ...unsure('这句没用到这个说法，不算。换一句要用到它的。' + (note ? ' ' + note : '')), better };
+  // A pass must point at where the pattern is in their own words; a miss needs no proof to count against nothing.
+  const ev = errWords(j?.evidence);
+  const found = ev.length > 0 && (' ' + words.join(' ') + ' ').includes(' ' + ev.join(' ') + ' ');
+  if (j?.ok && !found) return { ...unsure('AI 没能在你的句子里指出用到这个说法的地方，这次不算。' + (note ? ' ' + note : '')), better };
+  return { ok: !!j.ok, unsure: false, note, better, evidence: ev.join(' ') };
 }
-/* Record an attempt and move the error along its fix cycle. Returns 'deployed' | 'graduated' | 'again' | 'practice'. */
+/* Record an attempt and move the error along its fix cycle. Returns 'deployed' | 'graduated' | 'again' | 'practice' | 'unsure'. */
 function errRecord(e, drill, said, verdict) {
   const now = Date.now(), sched = e.due != null && e.due <= now, deploy = e.due == null;
-  e.tries.push({ t: now, zh: drill.zh, said, ok: verdict.ok, note: verdict.note, better: verdict.better, due: sched });
+  e.tries.push({ t: now, zh: drill.zh, said, ok: verdict.unsure ? null : verdict.ok, note: verdict.note, better: verdict.better, due: sched });
   let r = 'practice';
-  if (deploy && verdict.ok) { e.due = now + ERR_GAP; r = 'deployed'; }
+  if (verdict.unsure) r = 'unsure';
+  else if (deploy && verdict.ok) { e.due = now + ERR_GAP; r = 'deployed'; }
   else if (sched && verdict.ok) { Object.assign(e, { status: 'done', grad: now, due: null }); errPromote(); r = 'graduated'; }
   else if (!verdict.ok && (deploy || sched)) { e.due = null; r = 'again'; }
   save(); return r;

@@ -73,8 +73,14 @@ const LEARNER = "The learner is a Chinese graduate student (master's level, roug
 /* ================= state ================= */
 const S = { days: {}, lessons: {}, srs: {}, cards: {}, errs: {}, pron: { tests: [], drills: {} }, shadow: {}, prefs: { cur: 1, voice: '', ttsRate: 0.95, autoSpeak: true, level: 'normal', rate: 1, blind: false } };
 let LESSONS = [], N = 0, STATUS = {}, CFG = null;
-let saveT;
-function save() { clearTimeout(saveT); saveT = setTimeout(() => post('/api/state', S).catch(() => {}), 400); }
+/* Nothing is saved until the stored progress has loaded: saving the empty starting state would wipe it. */
+let saveT, stateLoaded = false, saveWarned = false;
+function save() {
+  if (!stateLoaded) return;
+  clearTimeout(saveT);
+  saveT = setTimeout(() => post('/api/state', S).then(() => { saveWarned = false; })
+    .catch(e => { if (!saveWarned) { saveWarned = true; alertBox('进度没保存上：' + e.message); } }), 400);
+}
 function day(d = today()) { return S.days[d] || (S.days[d] = {}); }
 function lessonRec(n) { return S.lessons[n] || (S.lessons[n] = {}); }
 function markDay(flag) { const d = day(); if (flag === 'ch') d.ch = (d.ch || 0) + 1; else d[flag] = true; save(); renderHeader(); }
@@ -1354,20 +1360,21 @@ function renderErrors() {
         graduated: '毕业了！这个错误移到「已毕业」。',
         again: '这次没过。看一下正确说法，再说一句新的。',
         practice: '这是额外练习，不影响复检时间。',
+        unsure: '这次不算，复检时间不变。再说一句。',
       }[ER.result] || '';
       const box = h('div', { class: 'err-verdict' },
-        h('div', { class: 'row' }, h('span', { class: 'tag ' + (v.ok ? 'good' : 'lamp'), text: v.ok ? '说对了' : '没过' }), v.note ? h('span', { class: 'small', text: v.note }) : null));
+        h('div', { class: 'row' }, h('span', { class: 'tag ' + (v.ok ? 'good' : 'lamp'), text: v.unsure ? '不算' : v.ok ? '说对了' : '没过' }), v.note ? h('span', { class: 'small', text: v.note }) : null));
       if (v.better) box.append(h('div', { class: 'say' }, h('p', { text: v.better }), sayBtn(v.better)));
       box.append(h('p', { class: 'sub-h', text: '参考答案' }), h('div', { class: 'say' }, h('p', { text: drill.en }), sayBtn(drill.en)));
       if (note) box.append(h('p', { class: 'err-result', text: note }));
       box.append(h('div', { class: 'row' },
         h('button', { class: 'btn primary', onclick: () => {
-          if (ER.result === 'again') { errSet(ER.id); renderErrors(); return; } // failed: another sentence on the same error
+          if (ER.result === 'again' || ER.result === 'unsure') { errSet(ER.id); renderErrors(); return; } // another sentence on the same error
           const list = errDueList();
           const i = list.findIndex(e => e.key === ER.id);
           const next = list.length ? list[(i + 1) % list.length] : null;
           errSet(next?.key || null); renderErrors();
-        } }, ER.result === 'again' ? '再说一句' : '下一个'),
+        } }, ER.result === 'again' || ER.result === 'unsure' ? '再说一句' : '下一个'),
         h('button', { class: 'btn ghost', onclick: () => { ER.on = false; errSet(null); renderErrors(); } }, '先停在这')));
       card.append(box);
     }
@@ -2008,7 +2015,8 @@ async function renderSettings() {
     const [ls, st] = await Promise.all([api('/api/lessons'), api('/api/status')]);
     LESSONS = ls.lessons; N = LESSONS.length; STATUS = st;
     await Promise.all([
-      api('/api/state').then(d => { for (const k of ['days', 'lessons', 'srs', 'cards', 'errs', 'pron', 'shadow']) if (d[k]) S[k] = d[k]; Object.assign(S.prefs, d.prefs || {}); }).catch(() => {}),
+      api('/api/state').then(d => { for (const k of ['days', 'lessons', 'srs', 'cards', 'errs', 'pron', 'shadow']) if (d[k]) S[k] = d[k]; Object.assign(S.prefs, d.prefs || {}); stateLoaded = true; })
+        .catch(e => alertBox('读不到之前的进度（' + e.message + '），这次练习不会保存。按 ⌘R 重新载入。')),
       loadRecs()]);
   } catch (e) { $('#view-today').replaceChildren(h('p', { class: 'err', text: e.message })); return; }
   if (!S.prefs.cur || S.prefs.cur > N) S.prefs.cur = 1;

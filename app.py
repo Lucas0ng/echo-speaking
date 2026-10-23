@@ -998,6 +998,29 @@ async def api_ai_audio(audio: UploadFile = File(...), prompt: str = Form(...), w
     return {"json": extract_json(text)} if want_json else {"text": text}
 
 
+BACKUPS = DATA / "backups"
+BACKUP_KEEP = 30
+STATE_KEYS = ("days", "lessons", "srs", "cards", "errs", "shadow")
+
+
+def state_size(d: dict) -> int:
+    """Rough amount of progress in a state: how many days, lessons, cards, errors and shadowed files it holds."""
+    return sum(len(d.get(k) or {}) for k in STATE_KEYS) + len((d.get("pron") or {}).get("tests") or [])
+
+
+def state_backup() -> None:
+    """The first save of each day copies the previous progress.json to data/backups/; the newest 30 days are kept."""
+    if not STATE_PATH.exists():
+        return
+    BACKUPS.mkdir(exist_ok=True)
+    snap = BACKUPS / f"progress-{time.strftime('%Y-%m-%d')}.json"
+    if snap.exists():
+        return
+    snap.write_bytes(STATE_PATH.read_bytes())
+    for old in sorted(BACKUPS.glob("progress-[0-9]*.json"))[:-BACKUP_KEEP]:
+        old.unlink()
+
+
 @app.get("/api/state")
 def api_state():
     if STATE_PATH.exists():
@@ -1009,6 +1032,20 @@ def api_state():
 async def api_state_save(req: Request):
     LAST_ACTIVE[0] = time.time()
     body = await req.json()
+    if not isinstance(body, dict):
+        raise HTTPException(400, "进度格式不对，没有保存。")
+    try:
+        cur = json.loads(STATE_PATH.read_text("utf-8")) if STATE_PATH.exists() else {}
+    except ValueError:
+        cur = None  # unreadable: keep it aside instead of overwriting it
+        BACKUPS.mkdir(exist_ok=True)
+        STATE_PATH.replace(BACKUPS / f"progress-unreadable-{int(time.time())}.json")
+    # A page that failed to load the progress starts from an empty state; its first save must not wipe the file.
+    # Real deletions go one card or error at a time, so losing half of a sizeable state in one save is refused.
+    if cur and state_size(cur) >= 10 and state_size(body) < state_size(cur) * 0.5:
+        raise HTTPException(409, "这次保存会丢掉一半以上的进度，已拒绝。请重新载入页面（⌘R）。")
+    if cur is not None:
+        state_backup()
     tmp = STATE_PATH.with_suffix(".tmp")
     tmp.write_text(json.dumps(body, ensure_ascii=False), "utf-8")
     tmp.replace(STATE_PATH)
