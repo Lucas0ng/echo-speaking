@@ -32,7 +32,8 @@ DATA = ROOT / "data"
 TRANS = DATA / "transcripts"
 RECS = DATA / "recordings"
 AI_CACHE = DATA / "ai_cache"
-for d in (DATA, TRANS, RECS, AI_CACHE):
+MEDIA_CACHE = DATA / "media"
+for d in (DATA, TRANS, RECS, AI_CACHE, MEDIA_CACHE):
     d.mkdir(parents=True, exist_ok=True)
 CFG_PATH = ROOT / "config.json"
 STATE_PATH = DATA / "progress.json"
@@ -172,6 +173,43 @@ def decode_audio(src) -> np.ndarray:
     if not chunks:
         return np.zeros(0, dtype=np.float32)
     return np.concatenate(chunks).astype(np.float32) / 32768.0
+
+
+MEDIA_LOCKS: dict[str, threading.Lock] = {}
+
+
+def seekable_media(p: Path) -> Path:
+    """An AAC copy of a lesson MP3, made once and cached in data/media/.
+
+    The lessons are VBR MP3s. WebKit (the Mac app's window) seeks in those by estimate and lands seconds away
+    from the Whisper timestamps, more the later in the episode; AAC in MP4 has a frame index and seeks exactly
+    (constant +21 ms encoder delay).
+    """
+    if p.suffix.lower() != ".mp3":
+        return p
+    import av
+
+    out = MEDIA_CACHE / (hashlib.sha1(str(p).encode()).hexdigest()[:20] + ".m4a")
+    with MEDIA_LOCKS.setdefault(str(out), threading.Lock()):
+        if out.exists() and out.stat().st_mtime >= p.stat().st_mtime:
+            return out
+        tmp = out.with_suffix(".tmp.m4a")
+        inp = av.open(str(p))
+        ins = inp.streams.audio[0]
+        dst = av.open(str(tmp), "w", format="mp4", options={"movflags": "faststart"})
+        st = dst.add_stream("aac", rate=ins.rate, layout="mono")
+        st.bit_rate = 64000
+        rs = av.AudioResampler(format="fltp", layout="mono", rate=ins.rate)
+        for fr in inp.decode(ins):
+            for f in rs.resample(fr):
+                dst.mux(st.encode(f))
+        for f in rs.resample(None):
+            dst.mux(st.encode(f))
+        dst.mux(st.encode(None))
+        dst.close()
+        inp.close()
+        tmp.replace(out)
+        return out
 
 
 def wav_bytes(samples: np.ndarray) -> bytes:
@@ -727,7 +765,8 @@ def api_lessons():
 
 @app.get("/api/media")
 def api_media(path: str):
-    return FileResponse(safe_media(path), media_type="audio/mpeg")
+    p = seekable_media(safe_media(path))
+    return FileResponse(p, media_type="audio/mp4" if p.suffix == ".m4a" else "audio/mpeg")
 
 
 @app.get("/api/transcript")
