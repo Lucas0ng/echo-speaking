@@ -80,7 +80,7 @@ function markLesson(n, step) {
   if (!L[step]) { L[step] = true; if (L.sh && L.ph && L.sp && !L.at) L.at = today(); }
   markDay(step);
 }
-const DAY_FLAGS = ['sh', 'ph', 'sp', 'rv', 'rt', 'bl'];
+const DAY_FLAGS = ['sh', 'ph', 'sp', 'rv', 'rt', 'bl', 'er'];
 const active = d => { const v = S.days[d]; return !!(v && (v.ch || DAY_FLAGS.some(k => v[k]))); };
 const level = d => { const v = S.days[d]; if (!v) return 0; return Math.min(3, DAY_FLAGS.filter(k => v[k]).length + (v.ch ? 1 : 0)); };
 const lessonsDone = () => Object.values(S.lessons).filter(l => l.sh && l.ph && l.sp).length;
@@ -139,7 +139,10 @@ function schedule(v, g) {
   v.reps++; v.due = d0.getTime() + v.ivl * DAY; return v;
 }
 const ivlText = v => (v.ivl === 0 ? '10 分钟' : v.ivl + ' 天');
-function updateBadge() { const n = dueList().length; const b = $('#dueBadge'); b.textContent = n; b.hidden = !n; }
+function updateBadge() {
+  const n = dueList().length, b = $('#dueBadge'); b.textContent = n; b.hidden = !n;
+  const en = errDueList().length, eb = $('#errBadge'); if (eb) { eb.textContent = en; eb.hidden = !en; }
+}
 
 /* ================= audio: lesson files, recorder ================= */
 const AUDS = new Map();
@@ -451,12 +454,12 @@ function renderHeader() {
 let TAB = 'today';
 function setTab(t) {
   if (t === 'log') t = 'progress';
-  if (!['today', 'retell', 'chunks', 'chat', 'progress', 'settings'].includes(t)) t = 'today';
+  if (!['today', 'retell', 'chunks', 'errors', 'chat', 'progress', 'settings'].includes(t)) t = 'today';
   if (TAB !== t) stopEverything();
   TAB = t;
   $$('.nav a').forEach(a => a.setAttribute('aria-selected', String(a.dataset.tab === t)));
   $$('main[data-view]').forEach(m => { m.hidden = m.dataset.view !== t; });
-  ({ today: renderToday, retell: renderRetell, chunks: renderChunks, chat: renderChat, progress: renderProgress, settings: renderSettings })[t]();
+  ({ today: renderToday, retell: renderRetell, chunks: renderChunks, errors: renderErrors, chat: renderChat, progress: renderProgress, settings: renderSettings })[t]();
   if (location.hash !== '#' + t) history.replaceState(null, '', '#' + t);
 }
 $$('.nav a').forEach(a => a.addEventListener('click', e => { e.preventDefault(); setTab(a.dataset.tab); }));
@@ -487,7 +490,12 @@ function micButton(owner, onBlob, labels = ['说', '停']) {
     const blob = await Rec.done; rerenderOwner(owner); if (blob.size > 800) onBlob(blob);
   } }, on ? [h('span', { class: 'rec-dot', style: 'background:#fff' }), labels[1]] : [ic('mic'), labels[0]]);
 }
-function rerenderOwner(owner) { if (String(owner).startsWith('chat')) renderChat(); else if (String(owner).startsWith('rev')) renderChunks(); else renderToday(); }
+function rerenderOwner(owner) {
+  if (String(owner).startsWith('chat')) renderChat();
+  else if (String(owner).startsWith('rev')) renderChunks();
+  else if (String(owner).startsWith('err')) renderErrors();
+  else renderToday();
+}
 
 let RTOK = 0;
 async function renderToday() {
@@ -630,7 +638,7 @@ function buildStep3(panel, n, L, rec, st) {
     st.busy.review = true; renderToday();
     try {
       st.review = await aiText(LEARNER + '\n\nIELTS-style speaking task (Part ' + L.p + '): "' + prompt + '"\nTarget chunk for today: "' + L.x + '".\nSpeech-to-text transcript of the learner (ignore punctuation and obvious mis-hearings):\n---\n' + s.slice(0, 6000) + '\n---\nJSON: {"comment_zh": "中文两句：做得好的一点 + 最该改的一点", "band": "rough IELTS speaking band, e.g. \\"6.0\\"", "corrected": "their answer with grammar and word choice fixed, same meaning", "natural": "a more fluent, natural version, about the same length", "fixes": [{"original": "...", "better": "...", "why_zh": "中文一句"}], "chunks": [{"en": "a useful multi-word chunk for this topic", "zh": "..."}], "used_target": true or false}. At most 5 fixes. Exactly 4 chunks (multi-word expressions, not single words).' + errPromptPart());
-      if (st.review) st.review.errKeys = errIngest(st.review.errors, '开口说 · ' + L.t);
+      if (st.review) { st.review.errKeys = errIngest(st.review.errors, '开口说 · ' + L.t); updateBadge(); }
       markLesson(n, 'sp');
     } catch (e) { alertBox(e.message); }
     st.busy.review = false; renderToday();
@@ -681,6 +689,7 @@ function renderReview(r, L) {
   if (r.natural) box.append(h('div', {}, h('h3', { text: '更地道的说法 · 拿来跟读' }), h('div', { class: 'say' }, h('p', { text: esc(r.natural) }), sayBtn(esc(r.natural)))));
   if (Array.isArray(r.fixes) && r.fixes.length) { const f = h('div', { class: 'card' }, h('h3', { text: '要改的地方' })); for (const x of r.fixes.slice(0, 5)) f.append(h('div', { class: 'fix' }, h('div', {}, h('s', { text: esc(x.original) }), ' → ', h('b', { text: esc(x.better) })), h('span', { class: 'hint', text: esc(x.why_zh) }))); box.append(f); }
   if (Array.isArray(r.chunks) && r.chunks.length) { const p = h('div', {}, h('h3', { text: '这个话题用得上的语块' })); for (const x of r.chunks.slice(0, 4)) p.append(h('div', { class: 'ex' }, sayBtn(esc(x.en)), h('span', { class: 'en', text: esc(x.en) }), chunkBtn(esc(x.en), esc(x.zh), '话题 · ' + L.t), h('span', { class: 'zh', text: esc(x.zh) }))); box.append(p); }
+  const errN = errNotice(r.errKeys); if (errN) box.append(errN);
   return box;
 }
 function renderAudioReview(r) {
@@ -742,6 +751,171 @@ function renderChunks() {
   root.replaceChildren(...frag);
 }
 
+/* ================= ERRORS (错误本) ================= */
+const ER = { on: true, id: null, drill: null, heard: null, verdict: null, result: null, busy: false, sttBusy: false, err: '' };
+const errWhen = ms => { const d = new Date(ms); return ymd(d) + ' ' + z2(d.getHours()) + ':' + z2(d.getMinutes()); };
+function errSet(id) { ER.id = id || null; ER.drill = null; ER.heard = null; ER.verdict = null; ER.result = null; ER.busy = false; ER.sttBusy = false; ER.err = ''; }
+function errNotice(keys) {
+  const list = (Array.isArray(keys) ? keys : []).map(k => S.errs[k]?.title_zh).filter(Boolean);
+  if (!list.length) return null;
+  return h('div', { class: 'notice row' },
+    h('span', { class: 'grow', text: '进了错误本：' + list.join('、') }),
+    h('button', { class: 'btn', onclick: () => { setTab('errors'); window.scrollTo({ top: 0 }); } }, '去练'));
+}
+const errDelBtn = e => h('button', { class: 'btn ghost icon-btn', title: '删除', 'aria-label': '删除', onclick: () => {
+  if (!confirm('删掉这条错误记录？')) return;
+  delete S.errs[e.key]; errPromote(); save(); renderErrors();
+} }, ic('x'));
+function errHead(e, ...tools) {
+  return h('div', { class: 'err-top' },
+    h('span', { class: 'err-name grow', text: e.title_zh }),
+    h('span', { class: 'tag', text: ERR_CATS[e.cat] || e.cat }),
+    ...tools,
+    errDelBtn(e));
+}
+function renderErrors() {
+  const root = $('#view-errors'); if (root.hidden) return;
+  updateBadge();
+  const due = errDueList(), active = errList('active'), queued = errList('queued'), done = errList('done');
+  let key = ER.id;
+  if (!key || !S.errs[key]) key = due[0]?.key || null;
+  else if (!ER.verdict && !due.some(e => e.key === key)) key = due[0]?.key || null;
+  if (key !== ER.id) errSet(key);
+  const cur = ER.id ? S.errs[ER.id] : null;
+  const frag = [h('h2', { class: 'page-title', text: '错误本' }),
+    h('p', { class: 'intro', text: '这里只放 AI 在你自由说话里发现的、最影响理解的错误。同时最多盯 5 个：每个先马上用新句子说对一次，48 小时后再复检，说对就毕业。' })];
+
+  const practice = h('div', { class: 'section' },
+    h('div', { class: 'row' }, h('h2', { class: 'grow', text: '现在要练' }), due.length ? h('span', { class: 'tag lamp', text: '待练 ' + due.length + ' 条' }) : null));
+  const noDue = () => {
+    let text;
+    if (active.length) {
+      const next = Math.min(...active.map(e => e.due).filter(v => v != null));
+      text = '现在没有要练的。下一次复检：' + errWhen(next);
+    } else if (!Object.keys(S.errs).length) {
+      text = '还没有记录。在「今天 › 开口说」点「点评内容」，或在 AI 对话里点「结束并总结」，AI 会把最影响理解的 1–3 个错误放进来。';
+    } else text = '现在没有要练的。';
+    return h('div', { class: 'next-cta', style: 'background:var(--sunk);color:var(--muted)' }, h('span', { text }));
+  };
+
+  if (ER.on && cur && (ER.verdict || due.some(e => e.key === cur.key))) {
+    const drill = ER.drill;
+    const card = h('div', { class: 'err-practice' },
+      h('div', { class: 'row' }, h('span', { class: 'err-title grow', text: cur.title_zh }), h('span', { class: 'tag', text: ERR_CATS[cur.cat] || cur.cat })),
+      h('div', { class: 'err-meta' },
+        h('span', { class: 'tag' + (cur.due == null ? ' lamp' : ''), text: cur.due == null ? '先马上说对一次' : cur.due > Date.now() ? '已说对，' + errWhen(cur.due) + ' 复检' : '48 小时复检' }),
+        h('span', { text: '已经遇到 ' + cur.seen.length + ' 次' })),
+      cur.rule_zh ? h('p', { class: 'hint', text: cur.rule_zh }) : null);
+    if (drill) card.append(h('p', { class: 'err-drill', text: drill.zh }));
+    if (drill && !ER.verdict) {
+      const mb = micButton('err', async blob => {
+        ER.sttBusy = true; ER.err = ''; renderErrors();
+        try {
+          const j = await sttFull(blob, '', { kind: 'review', meta: { ref: drill.en, err: cur.key } });
+          ER.heard = j.text;
+        } catch (e) { ER.err = e.message; }
+        ER.sttBusy = false; renderErrors();
+      }, ['说出来', '说完了']);
+      if (ER.busy || ER.sttBusy) mb.disabled = true;
+      card.append(h('div', { class: 'row' }, mb, h('span', { class: 'hint', text: '用一句新的英文把这个说法说对。' })));
+      if (ER.sttBusy) card.append(h('p', { class: 'thinking', text: '本地识别中…' }));
+    } else if (!drill) {
+      const b = h('button', { class: 'btn primary', disabled: ER.busy, onclick: async () => {
+        ER.busy = true; ER.err = ''; ER.heard = null; ER.verdict = null; ER.result = null; renderErrors();
+        try {
+          await errDrills(cur);
+          ER.drill = errNextDrill(cur);
+          if (!ER.drill) throw new Error('AI 没出好练习题，再试一次。');
+        } catch (e) { ER.err = e.message; }
+        ER.busy = false; renderErrors();
+      } }, ER.busy ? '出题中…' : '出题');
+      put(card, h('div', { class: 'row' }, b), ER.busy ? h('p', { class: 'thinking', text: 'AI 正在出题' }) : null);
+    }
+    if (drill && !ER.verdict && ER.heard != null) {
+      const ta = h('textarea', { placeholder: '识别出的英文' });
+      ta.value = ER.heard; ta.disabled = ER.busy;
+      ta.oninput = () => { ER.heard = ta.value; };
+      const jb = h('button', { class: 'btn primary', disabled: ER.busy, onclick: async () => {
+        const said = ta.value.trim(); if (!said) { ta.focus(); return; }
+        ER.busy = true; ER.err = ''; renderErrors();
+        try {
+          const verdict = await errJudge(cur, drill, said);
+          ER.verdict = verdict;
+          ER.result = errRecord(cur, drill, said, verdict);
+          markDay('er');
+        } catch (e) { ER.err = e.message; }
+        ER.busy = false; renderErrors();
+      } }, ER.busy ? 'AI 判断中…' : '判断');
+      card.append(ta, h('p', { class: 'hint', text: '本地识别有时会把语法自动改对，和你说的不一样就手动改回来。' }), h('div', { class: 'row' }, jb));
+    }
+    if (ER.verdict && drill) {
+      const v = ER.verdict;
+      const note = {
+        deployed: '这次说对了。48 小时后（' + errWhen(cur.due) + '）再复检一次。',
+        graduated: '毕业了！这个错误移到「已毕业」。',
+        again: '这次没过。看一下正确说法，再说一句新的。',
+        practice: '这是额外练习，不影响复检时间。',
+      }[ER.result] || '';
+      const box = h('div', { class: 'err-verdict' },
+        h('div', { class: 'row' }, h('span', { class: 'tag ' + (v.ok ? 'good' : 'lamp'), text: v.ok ? '说对了' : '没过' }), v.note ? h('span', { class: 'small', text: v.note }) : null));
+      if (v.better) box.append(h('div', { class: 'say' }, h('p', { text: v.better }), sayBtn(v.better)));
+      box.append(h('p', { class: 'sub-h', text: '参考答案' }), h('div', { class: 'say' }, h('p', { text: drill.en }), sayBtn(drill.en)));
+      if (note) box.append(h('p', { class: 'err-result', text: note }));
+      box.append(h('div', { class: 'row' },
+        h('button', { class: 'btn primary', onclick: () => {
+          if (ER.result === 'again') { errSet(ER.id); renderErrors(); return; } // failed: another sentence on the same error
+          const list = errDueList();
+          const i = list.findIndex(e => e.key === ER.id);
+          const next = list.length ? list[(i + 1) % list.length] : null;
+          errSet(next?.key || null); renderErrors();
+        } }, ER.result === 'again' ? '再说一句' : '下一个'),
+        h('button', { class: 'btn ghost', onclick: () => { ER.on = false; errSet(null); renderErrors(); } }, '先停在这')));
+      card.append(box);
+    }
+    if (ER.err) card.append(h('p', { class: 'err', text: ER.err }));
+    practice.append(card);
+  } else if (due.length) {
+    practice.append(h('div', { class: 'next-cta', style: 'background:var(--sunk);color:var(--muted)' },
+      h('span', { text: '还有 ' + due.length + ' 条错误要练。' }),
+      h('button', { class: 'btn primary', onclick: () => { ER.on = true; renderErrors(); } }, ER.on ? '开始练' : '继续练')));
+  } else {
+    practice.append(noDue());
+  }
+  frag.push(practice);
+
+  const activeList = h('div', { class: 'err-list' });
+  for (const e of active) {
+    const last = e.seen[e.seen.length - 1], wk = errWeekly(e);
+    activeList.append(h('div', { class: 'err-item' },
+      errHead(e, h('span', { class: 'err-count', text: '出现 ' + e.seen.length + ' 次' })),
+      e.rule_zh ? h('p', { class: 'hint', text: e.rule_zh }) : null,
+      last ? h('div', { class: 'fix' }, h('div', {}, h('s', { text: last.said }), ' → ', h('b', { text: last.better }))) : null,
+      h('div', { class: 'row' }, h('span', { class: 'tag' + (e.due == null ? ' lamp' : ''), text: e.due == null ? '待说对一次' : ymd(new Date(e.due)) + ' 复检' })),
+      wk.length >= 2
+        ? h('div', { class: 'err-chart' }, window.lineChart(wk, { unit: '次/周', better: 'down', digits: 0, height: 90 }))
+        : h('p', { class: 'hint', text: '每周出现次数：' + (wk.length ? wk[0].x + ' 那一周 ' + wk[0].y + ' 次' : '还没有记录') })));
+  }
+  if (!active.length) activeList.append(h('p', { class: 'hint', text: '现在没有正在盯的错误。' }));
+  frag.push(h('div', { class: 'section' }, h('h2', { text: '正在盯的错误（' + active.length + ' / ' + ERR_MAX_ACTIVE + '）' }), activeList));
+
+  if (queued.length) {
+    const ql = h('div', { class: 'err-list' });
+    for (const e of queued) ql.append(h('div', { class: 'err-item' }, errHead(e, h('span', { class: 'err-count', text: '出现 ' + e.seen.length + ' 次' }))));
+    frag.push(h('div', { class: 'section' }, h('h2', { text: '排队中' }), h('p', { class: 'hint', text: '前面的毕业后自动补上。' }), ql));
+  }
+
+  const dsec = h('div', { class: 'section' }, h('h2', { text: '已毕业 · ' + done.length }));
+  const gcurve = errGradCurve();
+  if (gcurve.length >= 2) dsec.append(h('div', { class: 'err-chart' }, window.lineChart(gcurve, { unit: '个', better: 'up', digits: 0, height: 120 })));
+  const dl = h('div', { class: 'err-list' });
+  for (const e of done) dl.append(h('div', { class: 'err-item' }, errHead(e, h('span', { class: 'err-count', text: (e.grad ? ymd(new Date(e.grad)) : '—') + ' 毕业' }))));
+  if (!done.length) dl.append(h('p', { class: 'hint', text: '还没有毕业的错误。' }));
+  dsec.append(dl);
+  frag.push(dsec);
+
+  root.replaceChildren(...frag);
+}
+
 /* ================= CHAT ================= */
 const SCEN = {
   topic: { label: '今日话题', role: n => 'You are a friendly IELTS speaking partner. Talk with the learner about "' + LESSONS[n - 1].t + '" in the style of IELTS Part ' + LESSONS[n - 1].p + ' and Part 3 follow-ups. Ask one question at a time. Give the learner chances to use the chunk "' + LESSONS[n - 1].x + '".' },
@@ -783,7 +957,7 @@ async function summarize() {
   try {
     const transcriptTxt = CHAT.view.map(v => (v.role === 'ai' ? 'Partner: ' + v.en : 'Learner: ' + v.text)).join('\n');
     CHAT.summary = await aiText(LEARNER + '\n\nPractice conversation:\n---\n' + transcriptTxt.slice(-12000) + "\n---\nReview the LEARNER's English only. JSON: {\"comment_zh\": \"中文，三句以内总评\", \"patterns\": [{\"issue_zh\": \"反复出现的问题\", \"example\": \"learner's words\", \"better\": \"corrected\"}], \"chunks\": [{\"en\": \"multi-word chunk they could have used\", \"zh\": \"...\"}]}. At most 3 patterns, exactly 4 chunks." + errPromptPart());
-    if (CHAT.summary) CHAT.summary.errKeys = errIngest(CHAT.summary.errors, 'AI 对话 · ' + SCEN[CHAT.scen].label);
+    if (CHAT.summary) { CHAT.summary.errKeys = errIngest(CHAT.summary.errors, 'AI 对话 · ' + SCEN[CHAT.scen].label); updateBadge(); }
   } catch (e) { CHAT.summary = { error: e.message }; }
   renderChat();
 }
@@ -813,6 +987,7 @@ function renderChat() {
       if (s.comment_zh) box.append(h('p', { text: esc(s.comment_zh) }));
       for (const p of (s.patterns || []).slice(0, 3)) box.append(h('div', { class: 'fix' }, h('b', { text: esc(p.issue_zh) }), h('div', {}, h('s', { text: esc(p.example) }), ' → ', h('span', { text: esc(p.better) }))));
       for (const x of (s.chunks || []).slice(0, 4)) box.append(h('div', { class: 'ex' }, sayBtn(esc(x.en)), h('span', { class: 'en', text: esc(x.en) }), chunkBtn(esc(x.en), esc(x.zh), '对话总结'), h('span', { class: 'zh', text: esc(x.zh) })));
+      const errN = errNotice(s.errKeys); if (errN) box.append(errN);
     }
     frag.push(box);
   }
