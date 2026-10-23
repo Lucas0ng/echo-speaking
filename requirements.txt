@@ -1,0 +1,8 @@
+# 回声 · Echo 的 Python 依赖（Apple 芯片 Mac）。start.command 第一次运行时自动安装。
+fastapi==0.159.1
+uvicorn==0.54.0
+python-multipart==0.0.32
+httpx==0.28.1
+numpy==2.5.4
+av==19.0.2
+mlx-whisper==0.4.3

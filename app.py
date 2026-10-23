@@ -10,6 +10,7 @@ import csv
 import hashlib
 import io
 import json
+import os
 import queue
 import re
 import secrets
@@ -39,7 +40,7 @@ CFG_PATH = ROOT / "config.json"
 STATE_PATH = DATA / "progress.json"
 
 DEFAULT_CFG = {
-    "media_dir": "~/Downloads/正版雅思听力资源",
+    "media_dir": "~/Downloads/回声课程音频",
     "whisper_model": "mlx-community/whisper-large-v3-turbo",
     "text_provider": "deepseek",
     "providers": {
@@ -140,7 +141,7 @@ try:
     LESSONS = build_lessons()
     LESSON_ERR = ""
 except Exception as e:  # media folder missing
-    LESSONS, LESSON_ERR = [], f"读不到资料文件夹：{e}"
+    LESSONS, LESSON_ERR = [], f"读不到课程音频（{e}）。先双击项目文件夹里的「下载课程.command」，下载完退出回声再打开。"
 
 
 def safe_media(rel: str) -> Path:
@@ -225,6 +226,22 @@ def wav_bytes(samples: np.ndarray) -> bytes:
 # ---------------------------------------------------------------- whisper
 MODEL_LOCK = threading.Lock()
 WHISPER = {"status": "idle", "error": ""}
+
+
+def use_hf_mirror_if_needed() -> None:
+    """The Whisper model downloads from Hugging Face on first use; where that site is unreachable (mainland China), use hf-mirror.com."""
+    if os.environ.get("HF_ENDPOINT"):
+        return
+    hub = Path(os.environ.get("HF_HUB_CACHE") or Path(os.environ.get("HF_HOME") or "~/.cache/huggingface") / "hub").expanduser()
+    if (hub / ("models--" + CFG["whisper_model"].replace("/", "--"))).exists():
+        return
+    try:
+        httpx.head("https://huggingface.co", timeout=5)
+    except httpx.HTTPError:
+        os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+
+
+use_hf_mirror_if_needed()
 
 
 def whisper_run(audio: np.ndarray, words: bool = False, prompt: str | None = None) -> dict:
