@@ -35,10 +35,13 @@ function sentPrompt(list, mine) {
     + '} ]}';
 }
 const clean = (x, n = 300) => String(x ?? '').slice(0, n);
+const sameWords = (a, b) => a.toLowerCase().replace(/[^a-z0-9' ]/g, '').replace(/\s+/g, ' ').trim() === b.toLowerCase().replace(/[^a-z0-9' ]/g, '').replace(/\s+/g, ' ').trim();
 function sentItem(s, x, mine) {
   const t = x?.template;
+  // the AI sometimes echoes an already-natural sentence instead of leaving native empty
+  const native = mine && !sameWords(clean(x?.native), s) ? clean(x?.native) : '';
   return {
-    s, native: mine ? clean(x?.native) : '', why_zh: mine ? clean(x?.why_zh) : '',
+    s, native, why_zh: native ? clean(x?.why_zh) : '',
     skeleton: (Array.isArray(x?.skeleton) ? x.skeleton : []).filter(p => p?.text).slice(0, 8).map(p => ({ text: clean(p.text, 200), role: SKEL_ROLES.includes(p.role) ? p.role : '其他' })),
     tense_zh: clean(x?.tense_zh, 60), pattern_zh: clean(x?.pattern_zh, 120),
     template: t?.en ? { en: clean(t.en, 200), zh: clean(t.zh, 120), example: { en: clean(t.example?.en, 200), zh: clean(t.example?.zh, 200) } } : null,

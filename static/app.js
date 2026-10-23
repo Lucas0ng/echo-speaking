@@ -322,6 +322,7 @@ const SHADOWS = new Map();
 class Shadow {
   constructor(path, sents, { onCount, label } = {}) {
     this.path = path; this.sents = sents; this.cur = 0; this.recs = new Map(); this.res = new Map(); this.ai = new Map();
+    this.sa = new Map(); this.saOpen = new Set();
     this.onCount = onCount; this.label = label || ''; this.auto = false; this.busy = new Set(); this.recording = null;
     this.boothEl = h('div', { class: 'booth' }); this.listEl = h('div', { class: 'script' }); this.barEl = h('div', { class: 'auto-bar' });
   }
@@ -365,6 +366,19 @@ class Shadow {
     } catch (e) { this.ai.set(i, { error: e.message }); }
     this.busy.delete('ai' + i); this.rerender();
   }
+  async analyze(i) {
+    if (this.busy.has('sa' + i)) return;
+    if (this.sa.has(i)) {
+      if (this.saOpen.has(i)) this.saOpen.delete(i); else this.saOpen.add(i);
+      this.rerender(); return;
+    }
+    this.busy.add('sa' + i); this.saOpen.add(i); this.rerender();
+    try {
+      const r = await analyzeSentences([this.sents[i].text]);
+      this.sa.set(i, r[0]);
+    } catch (e) { this.sa.set(i, { error: e.message }); }
+    this.busy.delete('sa' + i); this.saOpen.add(i); this.rerender();
+  }
   async compare(i) { const r = this.recs.get(i); if (!r) return; const s = this.sents[i]; if (await playSeg(this.audio, s.s, s.e)) await playBlobUrl(r.url); }
   async runAuto() {
     if (this.auto) { this.auto = false; stopEverything(); Rec.stop(); this.rerender(); return; }
@@ -395,6 +409,7 @@ class Shadow {
         rec ? h('button', { class: 'btn', onclick: () => playBlobUrl(rec.url) }, '听我的') : null,
         rec ? h('button', { class: 'btn', onclick: () => this.compare(i) }, '对比听') : null,
         rec ? h('button', { class: 'btn', disabled: this.busy.has('ai' + i), onclick: () => this.listen(i) }, this.busy.has('ai' + i) ? 'AI 在听…' : 'AI 听发音') : null,
+        h('button', { class: 'btn', disabled: this.busy.has('sa' + i), onclick: () => this.analyze(i) }, this.busy.has('sa' + i) ? 'AI 在拆…' : '拆句型'),
         h('span', { class: 'grow' }),
         chunkBtn(s.text, '', this.label),
         h('button', { class: 'btn ghost icon-btn', 'aria-label': '上一句', title: '上一句', disabled: i <= 0, onclick: () => this.focus(i - 1) }, ic('left')),
@@ -407,6 +422,8 @@ class Shadow {
     if (ai) kids.push(ai.error ? h('p', { class: 'err', text: ai.error }) : h('div', { class: 'ai-note' },
       h('div', { class: 'row' }, ai.score != null ? h('span', { class: 'tag lamp', text: '发音 ' + ai.score + ' / 10' }) : null, h('span', { text: esc(ai.summary_zh) })),
       (ai.issues || []).slice(0, 3).map(x => h('div', { class: 'small' }, h('b', { text: esc(x.word) }), '：' + esc(x.problem_zh) + (x.tip_zh ? '。' + x.tip_zh : '')))));
+    const sa = this.sa.get(i);
+    if (sa && this.saOpen.has(i)) kids.push(sa.error ? h('p', { class: 'err', text: sa.error }) : analysisView(sa, { mine: false, src: this.label }));
     this.boothEl.replaceChildren(...kids);
   }
   renderList() {
@@ -657,8 +674,21 @@ function buildStep3(panel, n, L, rec, st) {
   put(panel, h('div', { class: 'row' }, rb, ab), needKeyNote('text'));
   if (st.audioReview) panel.append(renderAudioReview(st.audioReview));
   if (st.review) {
-    panel.append(h('div', { class: 'result' }, h('h3', { text: '你说的（点词可查）' }),
-      h('div', { class: 'say' }, h('p', {}, wordify(st.talk, { mine: true, src: '开口说 · ' + L.t })))), renderReview(st.review, L));
+    const anaBtn = h('button', { class: 'btn', disabled: !!st.busy.ana, onclick: async () => {
+      const list = splitSentences(st.talk);
+      if (!list.length) { alertBox('没有可分析的完整句子。'); return; }
+      st.busy.ana = true; renderToday();
+      try { st.ana = await analyzeSentences(list, { mine: true }); }
+      catch (e) { alertBox(e.message); }
+      st.busy.ana = false; renderToday();
+    } }, '逐句精析：你说的 vs 母语者');
+    const resBox = h('div', { class: 'result' }, h('h3', { text: '你说的（点词可查）' }),
+      h('div', { class: 'say' }, h('p', {}, wordify(st.talk, { mine: true, src: '开口说 · ' + L.t }))),
+      h('div', { class: 'row' }, anaBtn, h('span', { class: 'hint', text: '约 ¥0.005，分析过的不再花钱' })),
+      st.busy.ana ? h('p', { class: 'thinking', text: 'AI 在逐句分析…' }) : null);
+    panel.append(resBox);
+    if (st.ana) for (const x of st.ana) panel.append(analysisView(x, { mine: true, src: '开口说 · ' + L.t }));
+    panel.append(renderReview(st.review, L));
   }
   panel.append(nextStepButton(n, 3, rec, 'sp', '只说不点评，标记完成'));
 }
@@ -673,7 +703,7 @@ async function speakRec(n, dur) {
   const blob = await Rec.done; clearInterval(SPT.iv);
   if (blob.size < 800) { renderToday(); return; }
   if (st.url) URL.revokeObjectURL(st.url);
-  st.blob = blob; st.url = URL.createObjectURL(blob); st.review = null; st.audioReview = null; st.metrics = null; st.busy.stt = true; renderToday();
+  st.blob = blob; st.url = URL.createObjectURL(blob); st.review = null; st.audioReview = null; st.metrics = null; st.ana = null; st.busy.stt = true; renderToday();
   try {
     const L = LESSONS[n - 1], j = await sttFull(blob, '', { kind: 'talk', meta: { lesson: n, topic: L.t, prompt: promptText(L) } });
     st.talk = j.text; st.metrics = j.metrics;
@@ -850,6 +880,73 @@ document.addEventListener('click', e => {
   if (WPOP && !e.composedPath().includes(WPOP)) closeWordCard();
 });
 
+/* ================= SENTENCE ANALYSIS (句型精析) ================= */
+/* role → colour class for the skeleton blocks; unknown roles fall back to grey. */
+const ROLE_CLASS = { '主语': 'r-subj', '谓语': 'r-verb', '宾语': 'r-obj', '表语': 'r-obj', '宾补': 'r-obj', '状语': 'r-adv', '定语': 'r-adv', '从句': 'r-clause', '连词': 'r-other', '插入语': 'r-other', '其他': 'r-other' };
+/* Template frame with every ___ rendered as an underlined slot. */
+function tplFrame(text) {
+  const box = h('span', { class: 'tpl-frame-text' });
+  for (const part of String(text ?? '').split(/(_{2,})/)) {
+    if (!part) continue;
+    if (/^_{2,}$/.test(part)) box.append(h('span', { class: 'blank', 'aria-label': '空格' }));
+    else box.append(part);
+  }
+  return box;
+}
+function analysisView(a, { mine = false, src = '' } = {}) {
+  a = a || {};
+  const box = h('div', { class: 'ana' });
+  if (mine) {
+    box.append(h('div', { class: 'ana-field' },
+      h('div', { class: 'ana-label', text: '你说的' }),
+      h('div', { class: 'say' }, h('p', {}, wordify(a.s || '', { mine: true, src })))));
+    const native = a.native || '';
+    box.append(h('div', { class: 'ana-field' },
+      h('div', { class: 'ana-label', text: '母语者会说' }),
+      native
+        ? h('div', { class: 'say' }, h('p', {}, wordify(native, { src })), sayBtn(native))
+        : h('div', { class: 'row' }, h('span', { class: 'tag good', text: '说得很自然' }))));
+    if (a.why_zh) box.append(h('p', { class: 'hint', text: a.why_zh }));
+  }
+  if (Array.isArray(a.skeleton) && a.skeleton.length) {
+    box.append(h('div', { class: 'skel' }, a.skeleton.map(p => h('div', { class: 'skel-part ' + (ROLE_CLASS[p.role] || 'r-other') },
+      h('b', { text: p.text }),
+      h('small', { text: p.role || '其他' })))));
+  }
+  const meta = [a.tense_zh, a.pattern_zh].filter(Boolean).join(' · ');
+  if (meta) box.append(h('p', { class: 'hint', text: meta }));
+  const t = a.template;
+  if (t && t.en) {
+    const add = h('button', { class: 'btn' });
+    const paint = () => {
+      const on = !!findTemplateCard(t.en);
+      add.textContent = on ? '已加入复习 · 再点移出' : '句型加入复习';
+      add.classList.toggle('primary', !on);
+      add.classList.toggle('done', on);
+    };
+    add.onclick = () => { toggleTemplateCard(t, src); paint(); };
+    paint();
+    const ex = t.example || {};
+    box.append(h('div', { class: 'tpl' },
+      h('h3', { class: 'tpl-title', text: '可迁移句型' }),
+      h('p', { class: 'tpl-en' }, tplFrame(t.en)),
+      t.zh ? h('p', { class: 'tpl-zh', text: t.zh }) : null,
+      ex.en ? h('div', { class: 'tpl-ex' },
+        h('div', { class: 'ana-label', text: '例句' }),
+        h('div', { class: 'say' }, h('p', {}, wordify(ex.en, { src })), sayBtn(ex.en)),
+        ex.zh ? h('p', { class: 'hint', text: ex.zh }) : null) : null,
+      h('div', { class: 'row tpl-foot' }, add, h('span', { class: 'hint', text: '复习时看中文，用这个句型把例句说出来' }))));
+  }
+  if (Array.isArray(a.chunks) && a.chunks.length) {
+    const list = h('div', { class: 'ana-chunks' });
+    for (const c of a.chunks) list.append(h('div', { class: 'ana-chunk' },
+      h('span', { class: 'en', text: c.en }), h('span', { class: 'zh', text: c.zh || '' }),
+      sayBtn(c.en), chunkBtn(c.en, c.zh, src)));
+    box.append(h('div', { class: 'ana-chunk-box' }, h('h3', { class: 'tpl-title', text: '值得偷的语块' }), list));
+  }
+  return box;
+}
+
 /* ================= CHUNKS (语块本) ================= */
 const RV = { on: false, id: null, shown: false, heard: null, busy: false, done: 0 };
 function renderChunks() {
@@ -866,9 +963,13 @@ function renderChunks() {
         h('div', { class: 'src', text: '还剩 ' + due.length + ' 条 · ' + (v.src || '') }),
         isWord
           ? h('div', { class: 'q' }, h('div', { class: 'cloze', text: clozeOf(v.en, v.cloze) }), v.zh ? h('div', { class: 'small muted' }, v.zh) : null)
-          : h('div', { class: 'q', text: v.zh || '（没有中文意思）先回忆，再说出英文' }));
+          : v.tpl
+            ? h('div', { class: 'q' },
+              h('div', { text: v.zh || '（没有中文意思）先回忆，再说出英文' }),
+              h('div', { class: 'tpl-frame' }, '用句型：', tplFrame(v.tpl)))
+            : h('div', { class: 'q', text: v.zh || '（没有中文意思）先回忆，再说出英文' }));
       if (!RV.shown) {
-        card.append(h('p', { class: 'hint', text: isWord ? '看挖空的句子，把整句说出来，再看答案。' : '先开口说出英文，再看答案。说出来比在心里想更能记住。' }),
+        card.append(h('p', { class: 'hint', text: isWord ? '看挖空的句子，把整句说出来，再看答案。' : v.tpl ? '看中文，用这个句型把整句说出来，再看答案。' : '先开口说出英文，再看答案。说出来比在心里想更能记住。' }),
           h('div', { class: 'row' },
             micButton('rev', async blob => { RV.busy = true; renderChunks(); try { const j = await sttFull(blob, v.en, { kind: 'review', meta: { ref: v.en } }); RV.heard = j.text; RV.words = j.words; } catch (e) { alertBox(e.message); } RV.busy = false; RV.shown = true; renderChunks(); say(v.en); }, ['说出来', '说完了']),
             h('button', { class: 'btn', onclick: () => { RV.shown = true; renderChunks(); say(v.en); } }, '直接看答案')));
@@ -897,7 +998,10 @@ function renderChunks() {
     h('span', { class: 'zh' },
       v.cloze ? h('span', { class: 'tag', text: '词卡' }) : null,
       v.cloze && v.mine ? h('span', { class: 'tag', text: '我说的' }) : null,
-      [v.zh, v.src].filter(Boolean).join(' · '),
+      v.tpl ? h('span', { class: 'tag', text: '句型' }) : null,
+      v.tpl
+        ? h('span', { class: 'tpl-line' }, '句型：', tplFrame(v.tpl), [v.zh, v.src].filter(Boolean).length ? ' · ' + [v.zh, v.src].filter(Boolean).join(' · ') : '')
+        : [v.zh, v.src].filter(Boolean).join(' · '),
       h('span', { class: 'due', text: '　' + (v.due <= Date.now() ? '待复习' : ymd(new Date(v.due)) + ' 复习') })),
     h('div', { class: 'tools' }, sayBtn(v.en), h('button', { class: 'btn ghost icon-btn', title: '删除', 'aria-label': '删除', onclick: () => { delete S.srs[id]; save(); renderChunks(); } }, ic('x')))));
   if (!items.length) list.append(h('p', { class: 'hint', text: '还没有语块。' }));
