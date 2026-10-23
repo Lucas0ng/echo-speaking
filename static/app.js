@@ -1253,7 +1253,15 @@ function renderChunks() {
       h('span', { class: 'due', text: '　' + (v.due <= Date.now() ? '待复习' : ymd(new Date(v.due)) + ' 复习') })),
     h('div', { class: 'tools' }, sayBtn(v.en), hasClip(v) ? clipBtn(v, '原声', 'btn ghost small') : null, h('button', { class: 'btn ghost icon-btn', title: '删除', 'aria-label': '删除', onclick: () => { delete S.srs[id]; save(); renderChunks(); } }, ic('x')))));
   if (!items.length) list.append(h('p', { class: 'hint', text: '还没有语块。' }));
-  frag.push(h('div', { class: 'section' }, h('h2', { text: '全部语块 · ' + items.length }), list));
+  const anki = h('button', { class: 'btn ghost small', disabled: !items.length, onclick: async () => {
+    anki.disabled = true;
+    try {
+      const j = await post('/api/export/anki', {});
+      alertBox('已导出 ' + j.n + ' 张到「下载」文件夹：' + j.name + (j.skipped ? '（' + j.skipped + ' 张没有中文意思，没导出）' : '') + '。在 Anki 里用「文件 › 导入」选它。');
+    } catch (e) { alertBox(e.message); }
+    anki.disabled = false;
+  } }, '导出到 Anki');
+  frag.push(h('div', { class: 'section' }, h('div', { class: 'row' }, h('h2', { class: 'grow', text: '全部语块 · ' + items.length }), anki), list));
   root.replaceChildren(...frag);
 }
 
