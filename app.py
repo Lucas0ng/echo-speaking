@@ -289,14 +289,27 @@ def word_list(result: dict) -> list[list]:
     return out
 
 
-def speech_seconds(samples: np.ndarray) -> float:
-    """Seconds of 30 ms frames loud enough to be speech. Near-silent clips make Whisper invent "Thank you."."""
+def _loud_frames(samples: np.ndarray) -> np.ndarray:
     n = SR * 3 // 100
     if len(samples) < n:
-        return 0.0
+        return np.zeros(0, dtype=bool)
     frames = samples[: len(samples) // n * n].reshape(-1, n)
-    rms = np.sqrt((frames ** 2).mean(axis=1))
-    return float((rms > 0.01).sum()) * 0.03
+    return np.sqrt((frames ** 2).mean(axis=1)) > 0.01
+
+
+def speech_seconds(samples: np.ndarray) -> float:
+    """Seconds of 30 ms frames loud enough to be speech. Near-silent clips make Whisper invent "Thank you."."""
+    return float(_loud_frames(samples).sum()) * 0.03
+
+
+def speech_onset(samples: np.ndarray) -> float | None:
+    """When speech starts: the first of 3 loud 30 ms frames in a row (a click or breath is shorter).
+    Whisper's first-word timestamp is often snapped to 0, so review grading times recall from this instead."""
+    loud = _loud_frames(samples)
+    for i in range(len(loud) - 2):
+        if loud[i] and loud[i + 1] and loud[i + 2]:
+            return round(i * 0.03, 2)
+    return None
 
 
 def fluency(words: list[list]) -> dict:
@@ -814,14 +827,15 @@ async def api_stt(audio: UploadFile = File(...), ref: str = Form(""), kind: str 
     prompt = FILLER_PROMPT if kind in CURVE_KINDS else None
     res = await run_blocking(lambda: whisper_run(samples, words=True, prompt=prompt))
     text = " ".join(s["text"].strip() for s in res.get("segments", [])).strip()
+    onset = speech_onset(samples)
     if not kind:
-        return {"text": text, "words": word_list(res)}
+        return {"text": text, "words": word_list(res), "onset": onset}
     try:
         m = json.loads(meta) if len(meta) < 4000 else {}
     except Exception:
         m = {}
     rec = save_recording(raw, audio.filename, samples, res, text, kind, "academic" if line == "academic" else "daily", m if isinstance(m, dict) else {})
-    return {"text": text, "words": rec["words"], "id": rec["id"], "metrics": rec["metrics"], "duration": rec["duration"]}
+    return {"text": text, "words": rec["words"], "id": rec["id"], "metrics": rec["metrics"], "duration": rec["duration"], "onset": onset}
 
 
 @app.get("/api/recordings")

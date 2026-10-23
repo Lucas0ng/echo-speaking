@@ -83,6 +83,8 @@ function markLesson(n, step) {
   if (!L[step]) { L[step] = true; if (L.sh && L.ph && L.sp && !L.at) L.at = today(); }
   markDay(step);
 }
+/* Undo a step marked done by mistake. The day's habit dot stays: something was still practised that day. */
+function unmarkLesson(n, step) { const L = lessonRec(n); delete L[step]; delete L.at; save(); renderHeader(); }
 const DAY_FLAGS = ['sh', 'ph', 'sp', 'rv', 'rt', 'bl', 'er'];
 const active = d => { const v = S.days[d]; return !!(v && (v.ch || DAY_FLAGS.some(k => v[k]))); };
 const level = d => { const v = S.days[d]; if (!v) return 0; return Math.min(3, DAY_FLAGS.filter(k => v[k]).length + (v.ch ? 1 : 0)); };
@@ -560,7 +562,7 @@ async function renderToday() {
 function nextStepButton(n, k, rec, flag, label) {
   const st = lp(n);
   return h('div', { class: 'panel-foot' },
-    rec[flag] ? h('span', { class: 'tag good', text: '这一步已完成' }) : h('button', { class: 'btn ghost', onclick: () => { markLesson(n, flag); renderToday(); } }, label),
+    rec[flag] ? h('span', { class: 'row' }, h('span', { class: 'tag good', text: '这一步已完成' }), h('button', { class: 'btn ghost small', title: '点错了可以撤销', onclick: () => { unmarkLesson(n, flag); renderToday(); } }, '撤销')) : h('button', { class: 'btn ghost', onclick: () => { markLesson(n, flag); renderToday(); } }, label),
     h('span', { class: 'grow' }),
     k < 3 ? h('button', { class: 'btn primary', onclick: () => { st.step = k + 1; stopEverything(); renderToday(); window.scrollTo({ top: 0 }); } }, '下一步', ic('right')) :
       h('button', { class: 'btn', onclick: () => startChatOn(n) }, '用这个话题和 AI 对话'));
@@ -949,13 +951,22 @@ function analysisView(a, { mine = false, src = '' } = {}) {
 
 /* ================= CHUNKS (语块本) ================= */
 const RV = { on: false, id: null, shown: false, heard: null, busy: false, done: 0 };
+const GRADES = [['忘了', 0], ['模糊', 1], ['想起来了', 2], ['脱口而出', 3]];
+/* Whisper's verdict on a spoken review answer → grade 0–3 plus the reason shown to the learner.
+   Accuracy is the word match against the answer; recall speed is when speech starts in the clip (onset, measured
+   from the audio by the server; recording begins on the click, so that is thinking time). */
+function autoGrade(ref, heard, words, onset) {
+  const a = align(ref, heard || '', words), first = onset ?? null;
+  const g = a.score < 50 ? 0 : a.score < 80 ? 1 : a.score >= 90 && first != null && first <= 2.5 ? 3 : 2;
+  return { g, why: '对上 ' + a.score + '%' + (first != null ? '，' + first.toFixed(1) + ' 秒开口' : '') };
+}
 function renderChunks() {
   const root = $('#view-chunks'); if (root.hidden) return;
   updateBadge();
   const due = dueList();
   const frag = [h('h2', { class: 'page-title', text: '语块本' })];
   if (RV.on) {
-    if (!RV.id || !S.srs[RV.id] || S.srs[RV.id].due > Date.now()) { RV.id = due[0]?.[0] || null; RV.shown = false; RV.heard = null; RV.words = null; }
+    if (!RV.id || !S.srs[RV.id] || S.srs[RV.id].due > Date.now()) { RV.id = due[0]?.[0] || null; RV.shown = false; RV.heard = null; RV.words = null; RV.auto = null; }
     if (!RV.id) { RV.on = false; frag.push(h('div', { class: 'next-cta' }, h('span', { text: '今天的复习完成了，一共 ' + RV.done + ' 条。' }), h('button', { class: 'btn', onclick: () => { RV.done = 0; renderChunks(); } }, '好'))); }
     else {
       const v = S.srs[RV.id], isWord = !!v.cloze;
@@ -971,13 +982,14 @@ function renderChunks() {
       if (!RV.shown) {
         card.append(h('p', { class: 'hint', text: isWord ? '看挖空的句子，把整句说出来，再看答案。' : v.tpl ? '看中文，用这个句型把整句说出来，再看答案。' : '先开口说出英文，再看答案。说出来比在心里想更能记住。' }),
           h('div', { class: 'row' },
-            micButton('rev', async blob => { RV.busy = true; renderChunks(); try { const j = await sttFull(blob, v.en, { kind: 'review', meta: { ref: v.en } }); RV.heard = j.text; RV.words = j.words; } catch (e) { alertBox(e.message); } RV.busy = false; RV.shown = true; renderChunks(); say(v.en); }, ['说出来', '说完了']),
+            micButton('rev', async blob => { RV.busy = true; renderChunks(); try { const j = await sttFull(blob, v.en, { kind: 'review', meta: { ref: v.en } }); RV.heard = j.text; RV.words = j.words; RV.auto = autoGrade(v.en, j.text, j.words, j.onset); } catch (e) { alertBox(e.message); } RV.busy = false; RV.shown = true; renderChunks(); say(v.en); }, ['说出来', '说完了']),
             h('button', { class: 'btn', onclick: () => { RV.shown = true; renderChunks(); say(v.en); } }, '直接看答案')));
         if (RV.busy) card.append(h('p', { class: 'thinking', text: '识别中…' }));
       } else {
         card.append(h('div', { class: 'row' }, h('div', { class: 'a' }, isWord ? markWord(v.en, v.cloze) : v.en), sayBtn(v.en)));
         if (RV.heard != null) card.append(diffView(v.en, RV.heard, RV.words));
-        card.append(h('div', { class: 'grades' }, [['忘了', 0], ['模糊', 1], ['想起来了', 2], ['脱口而出', 3]].map(([t, g]) => h('button', { class: 'btn', onclick: () => { S.srs[RV.id] = schedule(v, g); RV.done++; markDay('rv'); RV.id = null; save(); renderChunks(); } }, t, h('small', { text: ivlText(schedule(v, g)) })))));
+        if (RV.auto) card.append(h('p', { class: 'hint', text: '自动判定：' + GRADES[RV.auto.g][0] + '（' + RV.auto.why + '）。觉得不对就点别的。' }));
+        card.append(h('div', { class: 'grades' }, GRADES.map(([t, g]) => h('button', { class: 'btn' + (RV.auto?.g === g ? ' primary' : ''), onclick: () => { S.srs[RV.id] = schedule(v, g); RV.done++; markDay('rv'); RV.id = null; save(); renderChunks(); } }, t, h('small', { text: ivlText(schedule(v, g)) })))));
       }
       frag.push(card, h('div', { class: 'row' }, h('button', { class: 'btn ghost', onclick: () => { RV.on = false; renderChunks(); } }, '先停在这')));
     }
