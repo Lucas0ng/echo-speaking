@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>每天开口</string>
+  <key>CFBundleDisplayName</key><string>每天开口</string>
+  <key>CFBundleIdentifier</key><string>local.lucas.echo</string>
+  <key>CFBundleExecutable</key><string>Kaikou</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>0.1</string>
+  <key>CFBundleVersion</key><string>__BUILD__</string>
+  <key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
+  <key>LSMinimumSystemVersion</key><string>12.0</string>
+  <key>LSApplicationCategoryType</key><string>public.app-category.education</string>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>NSHumanReadableCopyright</key><string>本机自用</string>
+  <key>NSMicrophoneUsageDescription</key><string>录下你说的英语，用本机 Whisper 转写并计算语速等指标。录音只保存在这台电脑上。</string>
+  <key>NSAppTransportSecurity</key>
+  <dict><key>NSAllowsLocalNetworking</key><true/></dict>
+  <!-- written by mac/build.sh: where app.py, .venv and data/ live -->
+  <key>KaikouProjectDir</key><string>__PROJECT_DIR__</string>
+</dict>
+</plist>
