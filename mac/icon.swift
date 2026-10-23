@@ -1,5 +1,5 @@
 // 生成 1024×1024 的 App 图标 PNG：swift mac/icon.swift out.png
-// 朱红圆角方块（与界面强调色一致）+ 白色「开」字 + 一颗录音指示灯。
+// 墨绿圆角方块 + 米白声源圆点 + 两道回声弧（近的实、远的淡）。网页 favicon 是同一张图：static/icon.svg。
 import AppKit
 
 let out = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "icon.png"
@@ -19,23 +19,27 @@ shadow.shadowBlurRadius = 28
 shadow.shadowOffset = NSSize(width: 0, height: -12)
 NSGraphicsContext.saveGraphicsState()
 shadow.set()
-rgb(0xDF, 0x4A, 0x2F).setFill()
+rgb(0x14, 0x51, 0x4A).setFill()
 shape.fill()
 NSGraphicsContext.restoreGraphicsState()
-NSGradient(starting: rgb(0xEE, 0x62, 0x44), ending: rgb(0xCC, 0x3B, 0x22))!.draw(in: shape, angle: -90)
+NSGradient(starting: rgb(0x1A, 0x63, 0x5A), ending: rgb(0x10, 0x46, 0x40))!.draw(in: shape, angle: -90)
 
-// glyph
-let font = NSFont(name: "PingFangSC-Semibold", size: 470) ?? NSFont.systemFont(ofSize: 470, weight: .semibold)
-let glyph = NSAttributedString(string: "开", attributes: [.font: font, .foregroundColor: NSColor.white])
-let g = glyph.size()
-glyph.draw(at: NSPoint(x: (S - g.width) / 2, y: (S - g.height) / 2 - 18))
-
-// on-air light
-let dot = NSRect(x: 724, y: 724, width: 92, height: 92)
-NSColor.white.withAlphaComponent(0.22).setFill()
-NSBezierPath(ovalIn: dot.insetBy(dx: -22, dy: -22)).fill()
-NSColor.white.setFill()
-NSBezierPath(ovalIn: dot).fill()
+// source dot + two echo arcs; drawn on the 96-unit grid of static/icon.svg (y flipped), scaled to the body
+let u = body.width / 88
+let P = { (x: CGFloat, y: CGFloat) in NSPoint(x: body.minX + (x - 4) * u, y: body.maxY - (y - 4) * u) }
+let cream = rgb(0xF4, 0xEF, 0xE6)
+cream.setFill()
+let c = P(36, 48), r = 9 * u
+NSBezierPath(ovalIn: NSRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r)).fill()
+// same arcs as the SVG: centre x, radius, half-angle (endpoints at x 52 / 64), opening to the right
+for (cx, radius, half, alpha) in [(CGFloat(39.35), CGFloat(22), CGFloat(54.9), CGFloat(1)), (CGFloat(42.1), CGFloat(34), CGFloat(49.9), CGFloat(0.45))] {
+  let arc = NSBezierPath()
+  arc.appendArc(withCenter: P(cx, 48), radius: radius * u, startAngle: -half, endAngle: half)
+  arc.lineWidth = 6 * u
+  arc.lineCapStyle = .round
+  cream.withAlphaComponent(alpha).setStroke()
+  arc.stroke()
+}
 
 NSGraphicsContext.restoreGraphicsState()
 try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: out))

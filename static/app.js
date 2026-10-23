@@ -1,5 +1,5 @@
 'use strict';
-/* 每天开口 · 本地版前端 */
+/* 回声 · 本地版前端 */
 
 /* ================= helpers ================= */
 const $ = (s, r = document) => r.querySelector(s);
@@ -41,7 +41,7 @@ const esc = s => String(s ?? '');
 /* ================= api ================= */
 async function api(path, opts = {}) {
   let r;
-  try { r = await fetch(path, opts); } catch { throw new Error('连不上本地服务。确认「每天开口」的终端窗口还开着。'); }
+  try { r = await fetch(path, opts); } catch { throw new Error('连不上本地服务。确认「回声」的终端窗口还开着。'); }
   let j = null; try { j = await r.json(); } catch {}
   if (!r.ok) throw new Error(j?.error || ('请求失败（' + r.status + '）'));
   return j;

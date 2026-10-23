@@ -1,5 +1,5 @@
 /*
-  每天开口 — "quiet studio" direction.
+  回声 — "quiet studio" direction.
   Paper (or charcoal) ground, one vermilion accent reserved for recording and the current line.
   English learning material is set in a reading serif (Newsreader); the interface is sans (Geist + PingFang).
   Surfaces are separated by elevation and space, not by outlines.
@@ -61,6 +61,7 @@ a { color: inherit; }
 .rail { padding: 28px 16px 22px; display: flex; flex-direction: column; gap: 26px; position: sticky; top: 0; height: 100vh; border-right: 1px solid var(--line); }
 .brand { padding: 0 10px; }
 .brand h1 { font: 600 19px/1.2 var(--f-ui); letter-spacing: .04em; }
+.brand h1 .en { font-weight: 400; font-size: 15px; letter-spacing: .02em; color: var(--muted); margin-left: 4px; }
 .brand p { color: var(--muted); font-size: 12px; margin-top: 4px; }
 .habit { display: grid; gap: 8px; padding: 0 10px; }
 .habit p { color: var(--muted); font-size: 12px; }

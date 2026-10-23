@@ -1,4 +1,4 @@
-"""每天开口 · 本地口语练习软件（后端）
+"""回声 Echo · 本地口语练习软件（后端）
 
 运行：双击 start.command，或 `.venv/bin/python app.py`
 浏览器打开 http://127.0.0.1:8765
@@ -1163,7 +1163,7 @@ def api_export_anki():
     rows = anki_rows(srs)
     if not rows:
         raise HTTPException(400, "语块本里还没有能导出的卡片（没有中文意思的卡片不导出）。")
-    out = Path.home() / "Downloads" / f"每天开口-Anki-{time.strftime('%Y%m%d-%H%M')}.txt"
+    out = Path.home() / "Downloads" / f"回声-Anki-{time.strftime('%Y%m%d-%H%M')}.txt"
     head = "#separator:tab\n#html:true\n#columns:正面\t背面\t来源\tTags\n#tags column:4\n"
     out.write_text(head + "\n".join("\t".join(r) for r in rows) + "\n", "utf-8")
     return {"path": str(out), "name": out.name, "n": len(rows), "skipped": len(srs) - len(rows)}

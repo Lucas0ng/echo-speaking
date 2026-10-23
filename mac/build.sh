@@ -1,11 +1,11 @@
 #!/bin/zsh
-# 打包「每天开口」Mac App 和安装用的 dmg：在项目根目录运行 mac/build.sh
-# 产物：dist/每天开口.app、dist/每天开口.dmg。App 只是外壳，运行时用的是这个项目文件夹里的代码、.venv 和 data/。
+# 打包「回声」Mac App 和安装用的 dmg：在项目根目录运行 mac/build.sh
+# 产物：dist/回声.app、dist/回声.dmg。App 只是外壳，运行时用的是这个项目文件夹里的代码、.venv 和 data/。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD
 OUT=$ROOT/dist
-APP=$OUT/每天开口.app
+APP=$OUT/回声.app
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
@@ -33,7 +33,7 @@ echo "› dmg"
 mkdir -p "$WORK/dmg"
 cp -R "$APP" "$WORK/dmg/"
 ln -s /Applications "$WORK/dmg/Applications"
-rm -f "$OUT/每天开口.dmg"
-hdiutil create -quiet -volname "每天开口" -srcfolder "$WORK/dmg" -format UDZO "$OUT/每天开口.dmg"
+rm -f "$OUT/回声.dmg"
+hdiutil create -quiet -volname "回声" -srcfolder "$WORK/dmg" -format UDZO "$OUT/回声.dmg"
 
-echo "完成：$OUT/每天开口.dmg"
+echo "完成：$OUT/回声.dmg"

@@ -1,4 +1,4 @@
-// 每天开口 · Mac 外壳 App
+// 回声 · Mac 外壳 App
 // 启动时在后台运行项目里的 `.venv/bin/python app.py`（如果它还没在跑），用 WKWebView 显示界面，退出时关掉自己启动的服务。
 // 项目目录在构建时写进 Info.plist 的 KaikouProjectDir。构建：mac/build.sh
 import Cocoa
@@ -50,7 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
 
     window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1240, height: 840),
                       styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-    window.title = "每天开口"
+    window.title = "回声 · Echo"
     window.titlebarAppearsTransparent = true
     window.titleVisibility = .hidden  // the rail already shows the name
     window.backgroundColor = NSColor(name: nil) { ap in  // same as --bg in style.css
@@ -244,13 +244,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
       i.target = target
       return i
     }
-    _ = menu("每天开口", [
-      item("关于每天开口", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
+    _ = menu("回声", [
+      item("关于回声", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
       .separator(),
-      item("隐藏每天开口", #selector(NSApplication.hide(_:)), "h"),
+      item("隐藏回声", #selector(NSApplication.hide(_:)), "h"),
       item("隐藏其他", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
       .separator(),
-      item("退出每天开口", #selector(NSApplication.terminate(_:)), "q"),
+      item("退出回声", #selector(NSApplication.terminate(_:)), "q"),
     ])
     // without an Edit menu, ⌘C / ⌘V / ⌘A do nothing inside the web view
     _ = menu("编辑", [
