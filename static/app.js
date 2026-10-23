@@ -1273,10 +1273,10 @@ function pronTestView() {
     try {
       const j = await sttFull(blob, '', { kind: 'pron', meta: { test: true, round: PR.testRound + 1 } });
       if (tok !== PR.testTok || PR.view !== 'test') return;
-      const got = pronParse(j.text, j.words, PR.rounds[PR.testRound] || []);
+      const got = await pronEnrich(pronParse(j.text, j.words, PR.rounds[PR.testRound] || []));
       PR.testBusy = false;
       // a round mostly unheard (too quiet, too fast, not read) must not become a check-up: the first one is the baseline
-      const unclear = got.filter(x => x.ok == null).length;
+      const unclear = got.filter(x => x.ok == null && !x.hits).length;
       if (unclear > got.length / 2) { PR.testErr = '这一轮有 ' + unclear + ' 个词没听清（可能声音太小、读得太快，或没读完），这一轮不算，请再读一遍。'; renderPron(); return; }
       PR.testItems.push(...got);
       if (PR.testRound + 1 < PR.rounds.length) { PR.testRound++; renderPron(); }
@@ -1459,9 +1459,9 @@ function pronSayView() {
     PR.sayBusy = true; PR.sayErr = ''; PR.sayResult = null; renderPron();
     try {
       const j = await sttFull(blob, '', { kind: 'pron', meta: { cid: PR.cid, word: t.word } });
-      const r = pronSayJudge(t, j.text, j.words);
+      const [r] = await pronEnrich([pronSayJudge(t, j.text, j.words)]);
       PR.sayBusy = false;
-      if (r.ok == null) { PR.sayResult = { unclear: true }; renderPron(); return; }
+      if (r.ok == null) { PR.sayResult = { unclear: true, heard: r.heard || r.raw || '' }; renderPron(); return; }
       pronDropSayUrl(); PR.sayUrl = URL.createObjectURL(blob);
       pronRecord(PR.cid, 'say', t.word, r.ok, r.heard);
       if (r.ok) PR.sayScore++;
@@ -1475,7 +1475,7 @@ function pronSayView() {
     h('button', { class: 'btn', onclick: () => pronSpeak(pronLine(t.word), pick(pronVoices())) }, ic('speak'), '听示范'),
     answered ? null : mb));
   if (PR.sayBusy) card.append(h('p', { class: 'thinking', text: '本机识别中…' }));
-  if (PR.sayResult?.unclear) card.append(h('p', { class: 'hint warn', text: '没听清，再说一次（这次不算）' }));
+  if (PR.sayResult?.unclear) card.append(h('p', { class: 'hint warn', text: PR.sayResult.heard ? '听起来像 ' + PR.sayResult.heard + '，不是这一对里的词，再说一次（这次不算）' : '没听清，再说一次（这次不算）' }));
   if (answered) {
     const good = PR.sayResult.ok;
     card.append(h('p', { class: 'pron-feedback ' + (good ? 'ok' : 'bad') }, good ? '听起来是 ' + t.word + ' ✓' : '听起来像 ' + (PR.sayResult.heard || t.partner) + ' ✗'));

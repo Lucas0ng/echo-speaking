@@ -75,28 +75,77 @@ const SOUNDS_LIKE = {
 const tokens = text => String(text || '').toLowerCase().replace(/[’‘]/g, "'").replace(/\b10th\b/g, 'tenth').replace(/\b10\b/g, 'ten').replace(/\b9\b/g, 'nine')
   .split(/[^a-z']+/).filter(Boolean);
 const sameWord = (tok, w) => tok === w || (SOUNDS_LIKE[w] || []).includes(tok);
-/* Which of the two words was heard for each item, in reading order: the next occurrence of either word after the
-   previous match (a skipped word becomes unclear without shifting the rest). words = Whisper [word, start, end, probability] for the weak flag. */
+/* Which word was heard for each item. Tokens are aligned to the items globally (dynamic programming over reading
+   order), so a missing word cannot make a later item's token shift onto an earlier item. Exact matches anchor the
+   alignment; other tokens fill the gaps in order and stay as `raw` ("thin" heard as "sing"). Spelling says little
+   about sound (thin/sing), so whether a raw token is evidence is decided by phonetics in pronEnrich.
+   words = Whisper [word, start, end, probability], used for tokens and the weak flag when present. */
 function pronParse(heard, words, items) {
-  const toks = tokens(heard), probs = (words || []).map(w => [tokens(w[0])[0], w[3] ?? 1]);
-  let at = 0;
-  return items.map(it => {
-    let k = -1;
-    for (let j = at; j < toks.length; j++) if (sameWord(toks[j], it.word) || sameWord(toks[j], it.partner)) { k = j; break; }
-    if (k < 0) return { ...it, heard: null, ok: null, weak: false };
-    at = k + 1;
-    const raw = toks[k], got = sameWord(raw, it.word) ? it.word : it.partner, pr = probs.find(([w]) => w === raw)?.[1] ?? 1;
-    return { ...it, heard: got, ok: got === it.word, weak: pr < WEAK };
-  });
+  const toks = words?.length ? words.flatMap(w => tokens(w[0]).map(t => [t, w[3] ?? 1])) : tokens(heard).map(t => [t, 1]);
+  const n = items.length, m = toks.length, NO = -1e9;
+  const score = (it, t) => (sameWord(t, it.word) || sameWord(t, it.partner) ? 3 : 0.1);
+  const dp = Array.from({ length: n + 1 }, () => new Float64Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m; j >= 0; j--) {
+    let b = Math.max(dp[i + 1][j], j < m ? dp[i][j + 1] : NO);
+    if (j < m) b = Math.max(b, score(items[i], toks[j][0]) + dp[i + 1][j + 1]);
+    dp[i][j] = b;
+  }
+  const out = []; let i = 0, j = 0;
+  while (i < n) {
+    const it = items[i];
+    if (j < m && score(it, toks[j][0]) > NO && dp[i][j] === score(it, toks[j][0]) + dp[i + 1][j + 1]) {
+      const [t, p] = toks[j];
+      if (sameWord(t, it.word) || sameWord(t, it.partner)) { const got = sameWord(t, it.word) ? it.word : it.partner; out.push({ ...it, heard: got, ok: got === it.word, weak: p < WEAK }); }
+      else out.push({ ...it, heard: null, ok: null, weak: false, raw: t });
+      i++; j++;
+    } else if (j < m && dp[i][j] === dp[i][j + 1]) j++;
+    else { out.push({ ...it, heard: null, ok: null, weak: false }); i++; }
+  }
+  return out;
+}
+/* ---------- evidence from words heard as something else, via ECDICT phonetics ---------- */
+const PH_UNITS = ['tʃ', 'dʒ', 'i:', 'u:', 'ɑ:', 'ɔ:', 'ә:', 'ə:', 'ei', 'ai', 'au', 'ɔi', 'әu', 'əu', 'iә', 'iə', 'єә', 'eә', 'uә'];
+function phonemes(ph) {
+  const p = String(ph || '').replace(/[ˈˌ'.,\s()]/g, '').replace(/ɡ/g, 'g'), out = [];
+  for (let i = 0; i < p.length;) { const u = PH_UNITS.find(x => p.startsWith(x, i)); out.push(u || p[i]); i += u ? u.length : 1; }
+  return out;
+}
+/* Substitutions turning target phonemes a into heard phonemes b: [[from, to, isFinal]], or null when they differ by more than 2 edits. */
+function phSubs(a, b) {
+  const n = a.length, m = b.length, d = Array.from({ length: n + 1 }, (_, i) => Array.from({ length: m + 1 }, (_, j) => (i ? (j ? 0 : i) : j)));
+  for (let i = 1; i <= n; i++) for (let j = 1; j <= m; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  if (d[n][m] > 2) return null;
+  const subs = []; let i = n, j = m;
+  while (i && j) {
+    if (d[i][j] === d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)) { if (a[i - 1] !== b[j - 1]) subs.push([a[i - 1], b[j - 1], i === n]); i--; j--; }
+    else if (d[i][j] === d[i - 1][j] + 1) i--; else j--;
+  }
+  return subs;
+}
+const PH_CONTRAST = [['θ', 's', 'th-s'], ['ð', 'd', 'dh-d'], ['v', 'w', 'v-w'], ['i:', 'i', 'ee-i'], ['æ', 'e', 'ae-e'], ['l', 'n', 'l-n'], ['r', 'l', 'r-l'], ['n', 'ŋ', 'n-ng'], ['ʃ', 's', 'sh-s']];
+const FINAL_VOICING = [['d', 't'], ['z', 's'], ['v', 'f'], ['g', 'k']];
+const subContrast = ([x, y, fin]) => (fin && FINAL_VOICING.some(([v, u]) => (x === v && y === u) || (x === u && y === v)) ? 'final-voicing'
+  : PH_CONTRAST.find(([p, q]) => (x === p && y === q) || (x === q && y === p))?.[2]) || null;
+/* For items heard as some other word: which of the 10 contrasts that word's sound change belongs to (sad → set: æ→e and
+   final d→t). Sets it.heard = the word heard, it.hits = contrast ids, and ok = false when its own contrast is among them. */
+async function pronEnrich(items) {
+  await Promise.all(items.filter(it => it.raw).map(async it => {
+    const [a, b] = await Promise.all([dictLookup(it.word).catch(() => null), dictLookup(it.raw).catch(() => null)]);
+    const subs = a?.phonetic && b?.phonetic ? phSubs(phonemes(a.phonetic), phonemes(b.phonetic)) : null;
+    const hits = [...new Set((subs || []).map(subContrast).filter(Boolean))];
+    if (!hits.length) return;
+    Object.assign(it, { heard: it.raw, hits, ok: hits.includes(it.cid) ? false : null });
+  }));
+  return items;
 }
 function pronSaveTest(items) { pron().tests.push({ t: Date.now(), items }); save(); }
-/* Per contrast for one check-up: right / counted (unclear items are not counted). */
+/* Per contrast for one check-up: right / counted (unclear items are not counted). An item heard as another word
+   whose sound change belongs to a contrast (it.hits) counts as a miss for that contrast too. */
 function pronTestScore(test) {
-  const by = {};
+  const by = {}, at = cid => by[cid] || (by[cid] = { ok: 0, n: 0, wrong: [] });
   for (const it of test.items) {
-    const s = by[it.cid] || (by[it.cid] = { ok: 0, n: 0, wrong: [] });
-    if (it.ok == null) continue;
-    s.n++; if (it.ok && !it.weak) s.ok++; else if (it.ok) s.ok += 0.5; else s.wrong.push(it);
+    if (it.ok != null) { const s = at(it.cid); s.n++; if (it.ok && !it.weak) s.ok++; else if (it.ok) s.ok += 0.5; else s.wrong.push(it); }
+    for (const cid of it.hits || []) if (cid !== it.cid) { const s = at(cid); s.n++; s.wrong.push(it); }
   }
   return by;
 }
