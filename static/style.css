@@ -165,6 +165,8 @@ audio { color-scheme: inherit; }
 .booth .meta { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; letter-spacing: .02em; }
 .booth .line { font: 400 30px/1.4 var(--f-text); letter-spacing: -.005em; }
 .booth .line.blind { filter: blur(9px); user-select: none; }
+.booth .zh-line { margin: -10px 0 0; font-size: 15px; line-height: 1.6; color: var(--muted); }
+.booth .zh-btn { justify-self: start; margin: -12px 0 -6px -10px; font-size: 13px; }
 .booth .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .big-play { width: 52px; height: 52px; border-radius: 50%; border: 0; background: var(--ink); color: var(--bg); display: grid; place-items: center; cursor: pointer; flex: none; transition: transform .1s, opacity .15s; }
 .big-play:hover { opacity: .88; }

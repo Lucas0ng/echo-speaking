@@ -390,11 +390,30 @@ function markFocusWords(box, text, words, kind) {
   }
   return box;
 }
+/* Chinese meaning of a lesson sentence, 8 sentences per AI call, cached on disk. Shown only after the learner has
+   shadowed the line (or asks): reading Chinese first turns shadowing into translating, the habit shadowing is meant to break. */
+const ZH_BLOCK = 8, SENT_ZH = new Map(); // path + block → promise of strings
+function sentenceZh(path, sents, i) {
+  const start = Math.floor(i / ZH_BLOCK) * ZH_BLOCK, key = path + '#' + start;
+  if (!SENT_ZH.has(key)) {
+    const list = sents.slice(start, start + ZH_BLOCK).map(s => s.text);
+    const p = aiText(LEARNER + '\n\nThese lines come one after another from a spoken English lesson (some are fragments the teacher repeats for practice). '
+      + 'Translate each into natural spoken simplified Chinese that gives its meaning in context, not word for word; keep a fragment a fragment.\n'
+      + list.map((s, k) => (k + 1) + '. ' + s).join('\n') + '\nJSON: {"zh": [one string per line, same order]}', { think: false, cache: true }).then(j => {
+      const zh = Array.isArray(j?.zh) ? j.zh : [];
+      if (!zh.length) throw new Error('AI 返回的格式不对，再试一次。');
+      return list.map((_, k) => String(zh[k] ?? '').slice(0, 200));
+    });
+    p.catch(() => SENT_ZH.delete(key));
+    SENT_ZH.set(key, p);
+  }
+  return SENT_ZH.get(key).then(zh => zh[i - start]);
+}
 class Shadow {
   constructor(path, sents, { onCount, onScore, label } = {}) {
     this.path = path; this.sents = sents; this.cur = 0; this.recs = new Map(); this.res = new Map(); this.ai = new Map();
     this.sa = new Map(); this.saOpen = new Set(); this.focus = new Map();
-    this.pitch = new Map(); this.pitchOpen = new Set();
+    this.pitch = new Map(); this.pitchOpen = new Set(); this.zh = new Map(); this.zhOpen = new Set();
     this.onCount = onCount; this.onScore = onScore; this.label = label || ''; this.auto = false; this.busy = new Set(); this.recording = null;
     this.boothEl = h('div', { class: 'booth' }); this.listEl = h('div', { class: 'script' }); this.barEl = h('div', { class: 'auto-bar' });
   }
@@ -420,6 +439,7 @@ class Shadow {
     this.onCount?.(this.recs.size);
     this.rerender();
     this.check(i);
+    this.showZh(i);
     if (pitchWasOpen || (S.prefs.focus !== false && this.focus.get(i)?.kind === 'tone')) this.pitchLoad(i);
   }
   async pitchLoad(i) {
@@ -439,6 +459,24 @@ class Shadow {
       this.pitch.set(i, { error: e.message });
     }
     if (this.cur === i) this.rerender();
+  }
+  async showZh(i) {
+    this.zhOpen.add(i);
+    const old = this.zh.get(i);
+    if (old != null && !old.error) { this.rerender(); return; } // already loading or done
+    this.zh.set(i, { loading: true }); this.rerender();
+    try { this.zh.set(i, { text: await sentenceZh(this.path, this.sents, i) }); }
+    catch (e) { this.zh.set(i, { error: e.message }); }
+    if (this.cur === i) this.rerender();
+  }
+  zhView(i, rec) {
+    if (!this.zhOpen.has(i)) {
+      return S.prefs.blind && !rec ? null : h('button', { class: 'btn ghost zh-btn', title: '建议先跟读一遍再看；跟读后会自动显示', onclick: () => this.showZh(i) }, '看中文');
+    }
+    const z = this.zh.get(i) || { loading: true };
+    if (z.loading) return h('p', { class: 'zh-line thinking', text: '在翻译…' });
+    if (z.error) return h('p', { class: 'err', text: z.error });
+    return h('p', { class: 'zh-line', text: z.text });
   }
   togglePitch(i) {
     if (this.pitchOpen.has(i)) { this.pitchOpen.delete(i); this.rerender(); }
@@ -554,6 +592,7 @@ class Shadow {
       h('div', { class: 'meta' }, h('span', { text: '第 ' + (i + 1) + ' / ' + this.sents.length + ' 句' }), h('span', { text: fmt(s.s) + ' – ' + fmt(s.e) })),
       this.focusView(i, rec),
       h('p', { class: 'line' + (S.prefs.blind && !rec ? ' blind' : '') }, lineText),
+      this.zhView(i, rec),
       hist.length ? shHistoryView(hist) : null,
       h('div', { class: 'controls' },
         h('button', { class: 'big-play', title: '听原声', 'aria-label': '听原声', onclick: () => playSeg(this.audio, s.s, s.e) }, ic('play')),
