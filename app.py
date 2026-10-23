@@ -312,6 +312,68 @@ def speech_onset(samples: np.ndarray) -> float | None:
     return None
 
 
+PITCH_HOP = 160  # 10 ms at 16 kHz
+
+
+def pitch_track(x: np.ndarray, fmin: float = 70, fmax: float = 400, win: int = 640, thresh: float = 0.25) -> list:
+    """F0 in Hz every 10 ms (None when unvoiced), YIN (de Cheveigné & Kawahara 2002) vectorised with numpy.
+
+    A frame is voiced when its cumulative-mean-normalised difference dips under `thresh` within the speech f0 range
+    and it is loud enough relative to the clip. 0.25 rather than YIN's 0.1–0.15: male TTS voices left two thirds of
+    their frames unvoiced at 0.15 and a yes/no question read as flat. A 5-frame median filter removes single-frame octave jumps.
+    """
+    if len(x) < win + PITCH_HOP:
+        return []
+    frames = np.lib.stride_tricks.sliding_window_view(x.astype(np.float64), win)[::PITCH_HOP]
+    tmin, tmax = int(SR / fmax), int(SR / fmin)
+    w = win - tmax
+    n = 1 << int(np.ceil(np.log2(2 * win)))
+    head = np.zeros_like(frames)
+    head[:, :w] = frames[:, :w]
+    corr = np.fft.irfft(np.conj(np.fft.rfft(head, n)) * np.fft.rfft(frames, n), n)[:, : tmax + 1]
+    sq = np.concatenate([np.zeros((len(frames), 1)), np.cumsum(frames ** 2, axis=1)], axis=1)
+    taus = np.arange(tmax + 1)
+    e_tau = sq[:, taus + w] - sq[:, taus]
+    d = sq[:, [w]] + e_tau - 2 * corr
+    d[:, 0] = 0
+    cum = np.cumsum(d[:, 1:], axis=1)
+    cmnd = np.ones_like(d)
+    cmnd[:, 1:] = d[:, 1:] * taus[1:] / np.maximum(cum, 1e-12)
+    rms = np.sqrt((frames ** 2).mean(axis=1))
+    loud = rms > max(0.005, 0.05 * rms.max())
+    out = np.full(len(frames), np.nan)
+    for i in np.nonzero(loud)[0]:
+        c = cmnd[i, tmin : tmax + 1]
+        below = np.nonzero(c < thresh)[0]
+        if not len(below):
+            continue
+        k = below[0]
+        while k + 1 < len(c) and c[k + 1] < c[k]:
+            k += 1
+        t = k + tmin
+        if 0 < k < len(c) - 1:  # parabolic interpolation around the dip
+            a, b, cc = c[k - 1], c[k], c[k + 1]
+            den = a - 2 * b + cc
+            t = t + (0.5 * (a - cc) / den if den else 0)
+        out[i] = SR / t
+    sm = out.copy()
+    for i in range(len(out)):
+        win5 = out[max(0, i - 2) : i + 3]
+        if not np.isnan(out[i]) and np.count_nonzero(~np.isnan(win5)) >= 3:
+            sm[i] = np.nanmedian(win5)
+    return [None if np.isnan(v) else round(float(v), 1) for v in sm]
+
+
+MEDIA_PCM: dict = {}  # path -> samples of the last decoded lesson file (one episode is ~80 MB as float32)
+
+
+def media_samples(p: Path) -> np.ndarray:
+    if MEDIA_PCM.get("path") != str(p):
+        MEDIA_PCM.clear()
+        MEDIA_PCM.update(path=str(p), samples=decode_audio(p))
+    return MEDIA_PCM["samples"]
+
+
 def fluency(words: list[list]) -> dict:
     """Speech rate, fillers per 100 words and mean length of run, all from Whisper word timestamps.
 
@@ -836,6 +898,25 @@ async def api_stt(audio: UploadFile = File(...), ref: str = Form(""), kind: str 
         m = {}
     rec = save_recording(raw, audio.filename, samples, res, text, kind, "academic" if line == "academic" else "daily", m if isinstance(m, dict) else {})
     return {"text": text, "words": rec["words"], "id": rec["id"], "metrics": rec["metrics"], "duration": rec["duration"], "onset": onset}
+
+
+@app.post("/api/pitch")
+async def api_pitch(audio: UploadFile = File(...)):
+    """Pitch contour of a recording (the learner's shadowing attempt)."""
+    raw = await audio.read()
+    try:
+        samples = decode_audio(raw)
+    except Exception:
+        raise HTTPException(400, "这段录音解不开，再录一次试试。")
+    return {"hop": PITCH_HOP / SR, "f0": await run_blocking(lambda: pitch_track(samples))}
+
+
+@app.get("/api/pitch/media")
+def api_pitch_media(path: str, s: float, e: float):
+    """Pitch contour of one sentence of a lesson file, s..e seconds."""
+    x = media_samples(safe_media(path))
+    a, b = max(0, int((s - 0.05) * SR)), min(len(x), int((e + 0.15) * SR))
+    return {"hop": PITCH_HOP / SR, "f0": pitch_track(x[a:b])}
 
 
 @app.get("/api/recordings")

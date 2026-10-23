@@ -71,7 +71,7 @@ async function stt(blob, ref = '', arch = null) { return (await sttFull(blob, re
 const LEARNER = "The learner is a Chinese graduate student (master's level, roughly IELTS 5.5–6.5 speaking) practising spoken English. Explanations for the learner are in simplified Chinese; English examples are natural, spoken and modern.";
 
 /* ================= state ================= */
-const S = { days: {}, lessons: {}, srs: {}, cards: {}, errs: {}, pron: { tests: [], drills: {} }, prefs: { cur: 1, voice: '', ttsRate: 0.95, autoSpeak: true, level: 'normal', rate: 1, blind: false } };
+const S = { days: {}, lessons: {}, srs: {}, cards: {}, errs: {}, pron: { tests: [], drills: {} }, shadow: {}, prefs: { cur: 1, voice: '', ttsRate: 0.95, autoSpeak: true, level: 'normal', rate: 1, blind: false } };
 let LESSONS = [], N = 0, STATUS = {}, CFG = null;
 let saveT;
 function save() { clearTimeout(saveT); saveT = setTimeout(() => post('/api/state', S).catch(() => {}), 400); }
@@ -121,17 +121,18 @@ function sayBtn(text, label = '朗读') { const b = h('button', { class: 'btn gh
 
 /* ================= chunks (spaced repetition) ================= */
 const findChunk = en => Object.entries(S.srs).find(([, v]) => v.en.toLowerCase() === en.trim().toLowerCase());
-function addChunk(en, zh, src) {
+/* clip = { path, s, e }: where the sentence is in a lesson file, so review can play the original instead of TTS. */
+function addChunk(en, zh, src, clip) {
   en = en.trim(); if (!en) return null;
   const ex = findChunk(en); if (ex) { if (zh && !ex[1].zh) { ex[1].zh = zh; save(); } return ex[0]; }
   const id = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-  S.srs[id] = { en, zh: zh || '', src: src || '', t: Date.now(), due: Date.now(), ivl: 0, ease: 2.5, reps: 0 };
+  S.srs[id] = { en, zh: zh || '', src: src || '', t: Date.now(), due: Date.now(), ivl: 0, ease: 2.5, reps: 0, ...(clip ? { clip } : {}) };
   save(); updateBadge(); return id;
 }
-function chunkBtn(en, zh, src) {
+function chunkBtn(en, zh, src, clip) {
   const b = h('button', { class: 'btn ghost icon-btn' });
   const paint = () => { const on = !!findChunk(en); b.replaceChildren(ic(on ? 'starOn' : 'star')); b.title = on ? '已在语块本（再点移出）' : '加入语块本'; b.setAttribute('aria-label', b.title); };
-  b.onclick = () => { const f = findChunk(en); if (f) { delete S.srs[f[0]]; save(); updateBadge(); } else addChunk(en, zh, src); paint(); };
+  b.onclick = () => { const f = findChunk(en); if (f) { delete S.srs[f[0]]; save(); updateBadge(); } else addChunk(en, zh, src, clip); paint(); };
   paint(); return b;
 }
 const dueList = () => Object.entries(S.srs).filter(([, v]) => v.due <= Date.now()).sort((a, b) => a[1].due - b[1].due);
@@ -375,7 +376,9 @@ class Shadow {
     this.busy.add('chk' + i); this.rerender();
     try {
       const ref = this.sents[i].text, j = await sttFull(r.blob, ref, { kind: 'shadow', meta: { src: this.label, ref } });
-      this.res.set(i, { heard: j.text, words: j.words, score: align(ref, j.text, j.words).score });
+      const score = align(ref, j.text, j.words).score;
+      this.res.set(i, { heard: j.text, words: j.words, score });
+      if (j.text) shRecord(this.path, i, score); // nothing heard is a failed recording, not a score
     }
     catch (e) { this.res.set(i, { error: e.message }); }
     this.busy.delete('chk' + i); this.rerender();
@@ -453,7 +456,7 @@ class Shadow {
     }
     this.boothEl.className = 'booth' + (recOn ? ' live' : '');
     const fp = S.prefs.focus !== false ? this.focus.get(i) : null;
-    const lineText = markFocusWords(wordify(s.text, { src: this.label }), s.text, fp?.words, fp?.kind);
+    const lineText = markFocusWords(wordify(s.text, { src: this.label, clip: { path: this.path, s: s.s, e: s.e } }), s.text, fp?.words, fp?.kind);
     const kids = [
       h('div', { class: 'meta' }, h('span', { text: '第 ' + (i + 1) + ' / ' + this.sents.length + ' 句' }), h('span', { text: fmt(s.s) + ' – ' + fmt(s.e) })),
       this.focusView(i, rec),
@@ -466,7 +469,7 @@ class Shadow {
         rec ? h('button', { class: 'btn', disabled: this.busy.has('ai' + i), onclick: () => this.listen(i) }, this.busy.has('ai' + i) ? 'AI 在听…' : 'AI 听发音') : null,
         h('button', { class: 'btn', disabled: this.busy.has('sa' + i), onclick: () => this.analyze(i) }, this.busy.has('sa' + i) ? 'AI 在拆…' : '拆句型'),
         h('span', { class: 'grow' }),
-        chunkBtn(s.text, '', this.label),
+        chunkBtn(s.text, '', this.label, { path: this.path, s: s.s, e: s.e }),
         h('button', { class: 'btn ghost icon-btn', 'aria-label': '上一句', title: '上一句', disabled: i <= 0, onclick: () => this.select(i - 1) }, ic('left')),
         h('button', { class: 'btn ghost icon-btn', 'aria-label': '下一句', title: '下一句', disabled: i >= this.sents.length - 1, onclick: () => this.select(i + 1) }, ic('right'))),
     ];
@@ -850,7 +853,7 @@ function openWordCard(el) {
     addBtn.classList.toggle('done', on);
   };
   addBtn.onclick = () => {
-    toggleWordCard(word, sentence, { sense: senseNow, lemma: entry?.lemma?.w || entry?.w || '', src, mine: isMine });
+    toggleWordCard(word, sentence, { sense: senseNow, lemma: entry?.lemma?.w || entry?.w || '', src, mine: isMine, clip: el.dataset.clip ? JSON.parse(el.dataset.clip) : null });
     paintAdd();
   };
   paintAdd();
@@ -1834,7 +1837,7 @@ async function renderSettings() {
     const [ls, st] = await Promise.all([api('/api/lessons'), api('/api/status')]);
     LESSONS = ls.lessons; N = LESSONS.length; STATUS = st;
     await Promise.all([
-      api('/api/state').then(d => { for (const k of ['days', 'lessons', 'srs', 'cards', 'errs', 'pron']) if (d[k]) S[k] = d[k]; Object.assign(S.prefs, d.prefs || {}); }).catch(() => {}),
+      api('/api/state').then(d => { for (const k of ['days', 'lessons', 'srs', 'cards', 'errs', 'pron', 'shadow']) if (d[k]) S[k] = d[k]; Object.assign(S.prefs, d.prefs || {}); }).catch(() => {}),
       loadRecs()]);
   } catch (e) { $('#view-today').replaceChildren(h('p', { class: 'err', text: e.message })); return; }
   if (!S.prefs.cur || S.prefs.cur > N) S.prefs.cur = 1;
