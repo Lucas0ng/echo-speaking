@@ -9,7 +9,8 @@ starred from a lesson) are still said as they are. Grading:
 A sentence takes longer to start than a single chunk, hence 3 s instead of 2.5 s.
 */
 const CHUNK_MAX_WORDS = 6;
-const isSentenceCard = v => !v.cloze && !v.tpl && v.en.trim().split(/\s+/).length <= CHUNK_MAX_WORDS;
+// a short full sentence starred from a lesson ("I'm your host, Ryan.") is said as it is, not used in a new sentence
+const isSentenceCard = v => !v.cloze && !v.tpl && v.en.trim().split(/\s+/).length <= CHUNK_MAX_WORDS && !/[.!?]$/.test(v.en.trim());
 // placeholder words in dictionary-style chunks: "make up one's mind", "keep someone posted"
 const CHUNK_SLOTS = new Set(['someone', "someone's", 'somebody', 'something', "one's", 'oneself', 'sb', 'sth', 'do', 'doing', 'your', 'my']);
 // common irregular verb forms → base, so "grew up" counts for "grow up"

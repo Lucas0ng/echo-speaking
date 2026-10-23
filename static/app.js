@@ -185,6 +185,15 @@ function playBlobUrl(url) {
   mine = new Audio(url);
   return new Promise(res => { mine.onended = () => res(tok === segTok); mine.onerror = () => res(false); mine.play().catch(() => res(false)); });
 }
+/* Cards can remember where their sentence sits in a lesson file (clip = { path, s, e }). */
+const hasClip = v => !!(v?.clip && v.clip.path && v.clip.s != null && v.clip.e != null);
+function playChunkOriginal(v) {
+  if (hasClip(v)) return playSeg(aud(v.clip.path), v.clip.s, v.clip.e);
+  say(v.en);
+}
+function clipBtn(v, label = '听原声', cls = 'btn') {
+  return h('button', { class: cls, onclick: () => playSeg(aud(v.clip.path), v.clip.s, v.clip.e) }, label);
+}
 const Rec = {
   stream: null, mr: null, done: null, owner: null,
   async start(owner) {
@@ -321,6 +330,37 @@ function diffView(ref, heard, words) {
 }
 
 /* ================= sentence shadowing ================= */
+function pitchSvg(orig, mine) {
+  const W = 600, H = 160, padX = 12, padY = 12;
+  const xOf = x => padX + Math.max(0, Math.min(1, x)) * (W - padX * 2);
+  const yOf = y => padY + (12 - Math.max(-12, Math.min(12, y))) / 24 * (H - padY * 2);
+  /* Unvoiced frames (y: null) break the line, so one contour can become several polylines. */
+  const lines = points => {
+    const out = []; let seg = [];
+    for (const p of Array.isArray(points) ? points : []) {
+      const x = p?.x == null ? NaN : Number(p.x), y = p?.y == null ? NaN : Number(p.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) { if (seg.length) { out.push(seg); seg = []; } continue; }
+      seg.push(xOf(x).toFixed(1) + ',' + yOf(y).toFixed(1));
+    }
+    if (seg.length) out.push(seg);
+    return out;
+  };
+  const poly = (points, cls) => lines(points).map(seg => '<polyline class="pitch-line ' + cls + '" points="' + seg.join(' ') + '"/>').join('');
+  const zero = yOf(0).toFixed(1);
+  return '<svg class="pitch-chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="原声和你的语调曲线对比">'
+    + '<line class="pitch-zero" x1="' + padX + '" x2="' + (W - padX) + '" y1="' + zero + '" y2="' + zero + '"/>'
+    + poly(orig, 'pitch-orig') + poly(mine, 'pitch-mine') + '</svg>';
+}
+function shHistoryView(hist) {
+  const n = hist.length, first = hist[0]?.score, last = hist[n - 1]?.score;
+  const bars = h('span', { class: 'sh-bars', 'aria-hidden': 'true' });
+  for (const x of hist.slice(-10)) {
+    bars.append(h('i', { style: 'height:' + Math.max(2, Math.round((Number(x.score) || 0) * 0.14)) + 'px', title: x.score + '%' }));
+  }
+  return h('div', { class: 'sh-hist' },
+    h('span', { text: n === 1 ? '这句跟读过 1 次：' + first + '%' : '这句跟读 ' + n + ' 次：第 1 次 ' + first + '% → 最近 ' + last + '%' }),
+    bars);
+}
 const SHADOWS = new Map();
 /* First case-insensitive occurrence of the focus words in the sentence, as a character range. */
 function focusRange(text, words) {
@@ -344,10 +384,11 @@ function markFocusWords(box, text, words, kind) {
   return box;
 }
 class Shadow {
-  constructor(path, sents, { onCount, label } = {}) {
+  constructor(path, sents, { onCount, onScore, label } = {}) {
     this.path = path; this.sents = sents; this.cur = 0; this.recs = new Map(); this.res = new Map(); this.ai = new Map();
     this.sa = new Map(); this.saOpen = new Set(); this.focus = new Map();
-    this.onCount = onCount; this.label = label || ''; this.auto = false; this.busy = new Set(); this.recording = null;
+    this.pitch = new Map(); this.pitchOpen = new Set();
+    this.onCount = onCount; this.onScore = onScore; this.label = label || ''; this.auto = false; this.busy = new Set(); this.recording = null;
     this.boothEl = h('div', { class: 'booth' }); this.listEl = h('div', { class: 'script' }); this.barEl = h('div', { class: 'auto-bar' });
   }
   get audio() { return aud(this.path); }
@@ -367,9 +408,52 @@ class Shadow {
     const old = this.recs.get(i); if (old) URL.revokeObjectURL(old.url);
     this.recs.set(i, { blob, url: URL.createObjectURL(blob) });
     this.res.delete(i); this.ai.delete(i);
+    const pitchWasOpen = this.pitchOpen.has(i);
+    this.pitch.delete(i); // a new take needs a new comparison
     this.onCount?.(this.recs.size);
     this.rerender();
     this.check(i);
+    if (pitchWasOpen || (S.prefs.focus !== false && this.focus.get(i)?.kind === 'tone')) this.pitchLoad(i);
+  }
+  async pitchLoad(i) {
+    const rec = this.recs.get(i), s = this.sents[i]; if (!rec || !s) return;
+    this.pitchOpen.add(i);
+    const old = this.pitch.get(i);
+    if (old && !old.error) { this.rerender(); return; } // already loading or done
+    this.pitch.set(i, { loading: true });
+    this.rerender();
+    try {
+      const [a, b] = await Promise.all([pitchOfSegment(this.path, s.s, s.e), pitchOfBlob(rec.blob)]);
+      if (this.recs.get(i)?.blob !== rec.blob) return; // re-recorded while we were waiting
+      const orig = pitchContour(a?.f0), mine = pitchContour(b?.f0);
+      this.pitch.set(i, { orig, mine, verdict: pitchVerdict(orig, mine) });
+    } catch (e) {
+      if (this.recs.get(i)?.blob !== rec.blob) return;
+      this.pitch.set(i, { error: e.message });
+    }
+    if (this.cur === i) this.rerender();
+  }
+  togglePitch(i) {
+    if (this.pitchOpen.has(i)) { this.pitchOpen.delete(i); this.rerender(); }
+    else this.pitchLoad(i);
+  }
+  pitchView(i) {
+    if (!this.pitchOpen.has(i)) return null;
+    const st = this.pitch.get(i) || { loading: true };
+    const box = h('div', { class: 'pitch-box' });
+    put(box, h('div', { class: 'pitch-legend' },
+      h('span', { class: 'pitch-key' }, h('i', { class: 'pitch-swatch orig' }), '原声'),
+      h('span', { class: 'pitch-key' }, h('i', { class: 'pitch-swatch mine' }), '你')));
+    if (st.loading) { put(box, h('p', { class: 'thinking', text: '在算语调…' })); return box; }
+    if (st.error) { put(box, h('p', { class: 'err', text: st.error })); return box; }
+    const wrap = h('div', { class: 'pitch-chart-wrap' });
+    wrap.innerHTML = pitchSvg(st.orig, st.mine);
+    put(box, wrap.firstElementChild || wrap,
+      st.verdict
+        ? h('p', { class: 'pitch-verdict ' + (st.verdict.same ? 'good' : 'warn'), text: st.verdict.text })
+        : h('p', { class: 'hint pitch-verdict', text: '有声部分太短，看不出走向' }),
+      h('p', { class: 'hint pitch-hint', text: '看整体起伏和句末走向，不用追求曲线完全重合。' }));
+    return box;
   }
   async check(i) {
     const r = this.recs.get(i); if (!r) return;
@@ -378,7 +462,7 @@ class Shadow {
       const ref = this.sents[i].text, j = await sttFull(r.blob, ref, { kind: 'shadow', meta: { src: this.label, ref } });
       const score = align(ref, j.text, j.words).score;
       this.res.set(i, { heard: j.text, words: j.words, score });
-      if (j.text) shRecord(this.path, i, score); // nothing heard is a failed recording, not a score
+      if (j.text) { shRecord(this.path, i, score); this.onScore?.(); } // nothing heard is a failed recording, not a score
     }
     catch (e) { this.res.set(i, { error: e.message }); }
     this.busy.delete('chk' + i); this.rerender();
@@ -448,7 +532,8 @@ class Shadow {
       this.focus.set(i, { loading: true });
       shadowFocus(this.path, this.sents, i).then(f => {
         this.focus.set(i, f || { error: 'AI 没有返回这句的练习重点，再试一次。' });
-        if (this.cur === i) this.rerender();
+        if (this.cur === i && f?.kind === 'tone' && this.recs.has(i) && !this.pitchOpen.has(i)) this.pitchLoad(i);
+        else if (this.cur === i) this.rerender();
       }).catch(e => {
         this.focus.set(i, { error: e.message });
         if (this.cur === i) this.rerender();
@@ -456,16 +541,19 @@ class Shadow {
     }
     this.boothEl.className = 'booth' + (recOn ? ' live' : '');
     const fp = S.prefs.focus !== false ? this.focus.get(i) : null;
+    const hist = shHistory(this.path, i);
     const lineText = markFocusWords(wordify(s.text, { src: this.label, clip: { path: this.path, s: s.s, e: s.e } }), s.text, fp?.words, fp?.kind);
     const kids = [
       h('div', { class: 'meta' }, h('span', { text: '第 ' + (i + 1) + ' / ' + this.sents.length + ' 句' }), h('span', { text: fmt(s.s) + ' – ' + fmt(s.e) })),
       this.focusView(i, rec),
       h('p', { class: 'line' + (S.prefs.blind && !rec ? ' blind' : '') }, lineText),
+      hist.length ? shHistoryView(hist) : null,
       h('div', { class: 'controls' },
         h('button', { class: 'big-play', title: '听原声', 'aria-label': '听原声', onclick: () => playSeg(this.audio, s.s, s.e) }, ic('play')),
         h('button', { class: 'big-rec' + (recOn ? ' on' : ''), onclick: () => this.record(i) }, recOn ? [h('span', { class: 'rec-dot', style: 'background:#fff' }), '说完了'] : [ic('mic'), rec ? '重新跟读' : '跟读这句']),
         rec ? h('button', { class: 'btn', onclick: () => playBlobUrl(rec.url) }, '听我的') : null,
         rec ? h('button', { class: 'btn', onclick: () => this.compare(i) }, '对比听') : null,
+        rec ? h('button', { class: 'btn', onclick: () => this.togglePitch(i) }, this.pitchOpen.has(i) ? '收起语调' : '看语调') : null,
         rec ? h('button', { class: 'btn', disabled: this.busy.has('ai' + i), onclick: () => this.listen(i) }, this.busy.has('ai' + i) ? 'AI 在听…' : 'AI 听发音') : null,
         h('button', { class: 'btn', disabled: this.busy.has('sa' + i), onclick: () => this.analyze(i) }, this.busy.has('sa' + i) ? 'AI 在拆…' : '拆句型'),
         h('span', { class: 'grow' }),
@@ -477,19 +565,22 @@ class Shadow {
     else if (res?.error) kids.push(h('p', { class: 'err', text: res.error }));
     else if (res) kids.push(diffView(s.text, res.heard, res.words));
     else if (!rec) kids.push(h('p', { class: 'hint', text: '听一遍原声，再按「跟读这句」。说完停顿一下会自动结束，录完自动比对，标出没说清的词。' }));
+    const pv = this.pitchView(i); if (pv) kids.push(pv);
     if (ai) kids.push(ai.error ? h('p', { class: 'err', text: ai.error }) : h('div', { class: 'ai-note' },
       h('div', { class: 'row' }, ai.score != null ? h('span', { class: 'tag lamp', text: '发音 ' + ai.score + ' / 10' }) : null, h('span', { text: esc(ai.summary_zh) })),
       (ai.issues || []).slice(0, 3).map(x => h('div', { class: 'small' }, h('b', { text: esc(x.word) }), '：' + esc(x.problem_zh) + (x.tip_zh ? '。' + x.tip_zh : '')))));
     const sa = this.sa.get(i);
     if (sa && this.saOpen.has(i)) kids.push(sa.error ? h('p', { class: 'err', text: sa.error }) : analysisView(sa, { mine: false, src: this.label }));
-    this.boothEl.replaceChildren(...kids);
+    this.boothEl.replaceChildren(); put(this.boothEl, ...kids);
   }
   renderList() {
     const keep = this.listEl.scrollTop;
     this.listEl.replaceChildren(...this.sents.map((s, i) => {
-      const res = this.res.get(i), rec = this.recs.get(i);
+      const res = this.res.get(i), rec = this.recs.get(i), hist = shHistory(this.path, i);
+      const lastPast = hist.length ? hist[hist.length - 1].score : null;
       const st = this.recording === i ? h('span', { class: 'st' }, h('span', { class: 'rec-dot' })) :
         res?.score != null ? h('span', { class: 'st' + (res.score >= 80 ? ' ok' : ''), text: res.score + '%' }) :
+        lastPast != null ? h('span', { class: 'st past', title: '上次跟读', text: lastPast + '%' }) :
         rec ? h('span', { class: 'st ok' }, ic('check')) : h('span', { class: 'st' });
       return h('div', { class: 'sent' + (i === this.cur ? ' cur' : ''), onclick: () => this.select(i) },
         h('span', { class: 'ts', text: fmt(s.s) }), h('span', { class: 'tx' + (S.prefs.blind && !rec ? ' blind' : ''), text: s.text }), st);
@@ -629,7 +720,15 @@ async function buildStep1(panel, n, L, rec) {
   if (!tr?.sentences) { try { tr = await transcript(L.f); } catch (e) { tr = { status: 'error', error: e.message }; } }
   if (tr.sentences) {
     let sh = SHADOWS.get(L.f);
-    if (!sh) { sh = new Shadow(L.f, tr.sentences, { label: 'IELTSCast：' + L.t, onCount: c => { if (c >= 5 && !lessonRec(n).sh) markLesson(n, 'sh'); } }); SHADOWS.set(L.f, sh); }
+    const fstEl = h('span', { class: 'sh-file-stats' });
+    const paintFst = () => {
+      const fst = shFileStats(L.f);
+      fstEl.textContent = fst.n ? '· 这一集跟读过 ' + fst.n + ' 句，平均 第一次 ' + fst.first + '% → 最近 ' + fst.last + '%' : '';
+      fstEl.hidden = !fst.n;
+    };
+    if (!sh) { sh = new Shadow(L.f, tr.sentences, { label: 'IELTSCast：' + L.t, onScore: paintFst, onCount: c => { if (c >= 5 && !lessonRec(n).sh) markLesson(n, 'sh'); } }); SHADOWS.set(L.f, sh); }
+    else sh.onScore = paintFst;
+    paintFst();
     put(panel,
       h('p', { class: 'intro', text: (L.w ? '这一集原音频带停顿。' : '') + '选一句，先听原声，再跟读。录完自动用本地 Whisper 比对，跟读满 5 句这一步就完成。' }),
       sh.view(),
@@ -637,7 +736,7 @@ async function buildStep1(panel, n, L, rec) {
         h('span', {}, '速度'), seg([0.75, 0.85, 1], S.prefs.rate, v => { S.prefs.rate = v; save(); }),
         h('label', { class: 'row' }, h('input', { type: 'checkbox', checked: S.prefs.focus !== false, onchange: e => { S.prefs.focus = e.target.checked; save(); sh.rerender(); } }), '每句一个练习重点'),
         h('label', { class: 'row' }, h('input', { type: 'checkbox', checked: S.prefs.blind, onchange: e => { S.prefs.blind = e.target.checked; save(); sh.rerender(); } }), '盲跟：跟读前不显示原文'),
-        h('span', { class: 'grow' }), h('span', { class: 'mono', text: '已跟读 ' + sh.recs.size + ' / ' + sh.sents.length + ' 句' })),
+        h('span', { class: 'grow' }), h('span', { class: 'mono', text: '已跟读 ' + sh.recs.size + ' / ' + sh.sents.length + ' 句' }), fstEl),
       needKeyNote('omni'));
   } else {
     panel.append(h('p', { class: 'thinking', id: 'trHint-' + L.f, text: String(tr.status).startsWith('error') ? '字幕生成失败：' + (tr.error || tr.status) : '正在用本地 Whisper 给这一集生成逐句字幕，大约一两分钟。先听整集。' }), nativeAudio(L.f));
@@ -1008,7 +1107,7 @@ function analysisView(a, { mine = false, src = '' } = {}) {
 }
 
 /* ================= CHUNKS (语块本) ================= */
-const RV = { on: false, id: null, shown: false, heard: null, busy: false, done: 0 };
+const RV = { on: false, id: null, shown: false, heard: null, words: null, auto: null, peek: false, verdict: null, busy: false, done: 0 };
 const GRADES = [['忘了', 0], ['模糊', 1], ['想起来了', 2], ['脱口而出', 3]];
 /* Whisper's verdict on a spoken review answer → grade 0–3 plus the reason shown to the learner.
    Accuracy is the word match against the answer; recall speed is when speech starts in the clip (onset, measured
@@ -1018,34 +1117,106 @@ function autoGrade(ref, heard, words, onset) {
   const g = a.score < 50 ? 0 : a.score < 80 ? 1 : a.score >= 90 && first != null && first <= 2.5 ? 3 : 2;
   return { g, why: '对上 ' + a.score + '%' + (first != null ? '，' + first.toFixed(1) + ' 秒开口' : '') };
 }
+/* The learner's own sentence, with the chunk words they used marked. Plain text when they cannot be located. */
+function markChunkHeard(text, chunk) {
+  const s = String(text ?? ''), box = h('span', { class: 'review-heard-text' });
+  const want = tokens(chunk).filter(w => !CHUNK_SLOTS.has(w));
+  if (!s || !want.length || !chunkUsed(chunk, s)) { box.textContent = s; return box; }
+  const words = [...s.matchAll(/[A-Za-z][A-Za-z’']*/g)].map(m => ({ raw: m[0], t: nt(m[0]), at: m.index }));
+  const hit = new Set();
+  let j = 0;
+  for (const w of want) {
+    const stem = w.replace(/(ing|ed|es|s|e)$/, '');
+    while (j < words.length && !(near(words[j].t, w) || IRREG[words[j].t] === w || (stem.length >= 3 && words[j].t.startsWith(stem)))) j++;
+    if (j >= words.length) { box.textContent = s; return box; }
+    hit.add(j++);
+  }
+  let last = 0;
+  words.forEach((x, k) => {
+    if (x.at > last) box.append(s.slice(last, x.at));
+    put(box, hit.has(k) ? h('mark', { class: 'chunk-hit', text: x.raw }) : x.raw);
+    last = x.at + x.raw.length;
+  });
+  if (last < s.length) box.append(s.slice(last));
+  return box;
+}
 function renderChunks() {
   const root = $('#view-chunks'); if (root.hidden) return;
   updateBadge();
   const due = dueList();
   const frag = [h('h2', { class: 'page-title', text: '语块本' })];
   if (RV.on) {
-    if (!RV.id || !S.srs[RV.id] || S.srs[RV.id].due > Date.now()) { RV.id = due[0]?.[0] || null; RV.shown = false; RV.heard = null; RV.words = null; RV.auto = null; }
+    if (!RV.id || !S.srs[RV.id] || S.srs[RV.id].due > Date.now()) { RV.id = due[0]?.[0] || null; RV.shown = false; RV.heard = null; RV.words = null; RV.auto = null; RV.peek = false; RV.verdict = null; }
     if (!RV.id) { RV.on = false; frag.push(h('div', { class: 'next-cta' }, h('span', { text: '今天的复习完成了，一共 ' + RV.done + ' 条。' }), h('button', { class: 'btn', onclick: () => { RV.done = 0; renderChunks(); } }, '好'))); }
     else {
       const v = S.srs[RV.id], isWord = !!v.cloze;
+      const newSay = isSentenceCard(v) && !!String(v.zh || '').trim();
       const card = h('div', { class: 'review' },
         h('div', { class: 'src', text: '还剩 ' + due.length + ' 条 · ' + (v.src || '') }),
-        isWord
-          ? h('div', { class: 'q' }, h('div', { class: 'cloze', text: clozeOf(v.en, v.cloze) }), v.zh ? h('div', { class: 'small muted' }, v.zh) : null)
-          : v.tpl
-            ? h('div', { class: 'q' },
-              h('div', { text: v.zh || '（没有中文意思）先回忆，再说出英文' }),
-              h('div', { class: 'tpl-frame' }, '用句型：', tplFrame(v.tpl)))
-            : h('div', { class: 'q', text: v.zh || '（没有中文意思）先回忆，再说出英文' }));
+        newSay
+          ? h('div', { class: 'q new-say-q', text: v.zh })
+          : isWord
+            ? h('div', { class: 'q' }, h('div', { class: 'cloze', text: clozeOf(v.en, v.cloze) }), v.zh ? h('div', { class: 'small muted' }, v.zh) : null)
+            : v.tpl
+              ? h('div', { class: 'q' },
+                h('div', { text: v.zh || '（没有中文意思）先回忆，再说出英文' }),
+                h('div', { class: 'tpl-frame' }, '用句型：', tplFrame(v.tpl)))
+              : h('div', { class: 'q', text: v.zh || '（没有中文意思）先回忆，再说出英文' }));
+      if (newSay && RV.peek && !RV.shown) card.append(h('p', { class: 'hint new-say-peek', text: '语块：' + v.en }));
       if (!RV.shown) {
-        card.append(h('p', { class: 'hint', text: isWord ? '看挖空的句子，把整句说出来，再看答案。' : v.tpl ? '看中文，用这个句型把整句说出来，再看答案。' : '先开口说出英文，再看答案。说出来比在心里想更能记住。' }),
-          h('div', { class: 'row' },
-            micButton('rev', async blob => { RV.busy = true; renderChunks(); try { const j = await sttFull(blob, v.en, { kind: 'review', meta: { ref: v.en } }); RV.heard = j.text; RV.words = j.words; RV.auto = autoGrade(v.en, j.text, j.words, j.onset); } catch (e) { alertBox(e.message); } RV.busy = false; RV.shown = true; renderChunks(); say(v.en); }, ['说出来', '说完了']),
-            h('button', { class: 'btn', onclick: () => { RV.shown = true; renderChunks(); say(v.en); } }, '直接看答案')));
+        const row = h('div', { class: 'row' },
+          newSay
+            ? micButton('rev', async blob => {
+              RV.busy = true; renderChunks();
+              let j;
+              try { j = await sttFull(blob, '', { kind: 'review', meta: { ref: v.en, mode: 'sentence' } }); }
+              catch (e) { alertBox(e.message); RV.busy = false; renderChunks(); return; }
+              const heard = String(j?.text || '');
+              if (!heard.trim()) { alertBox('没听到说话，再说一次'); RV.busy = false; renderChunks(); return; }
+              const used = chunkUsed(v.en, heard);
+              let verdict = { ok: false, note: '', better: '' };
+              if (used) {
+                try { verdict = await chunkJudge(v, heard); }
+                catch (e) { alertBox(e.message); verdict = { ok: used, note: '', better: '' }; }
+              }
+              RV.auto = chunkGrade(used, verdict, j.onset, RV.peek);
+              RV.verdict = verdict;
+              RV.heard = heard;
+              RV.words = j.words;
+              RV.busy = false;
+              RV.shown = true;
+              renderChunks();
+              playChunkOriginal(v);
+            }, ['说一句', '说完了'])
+            : micButton('rev', async blob => {
+              RV.busy = true; renderChunks();
+              try { const j = await sttFull(blob, v.en, { kind: 'review', meta: { ref: v.en } }); RV.heard = j.text; RV.words = j.words; RV.auto = autoGrade(v.en, j.text, j.words, j.onset); }
+              catch (e) { alertBox(e.message); }
+              RV.busy = false; RV.shown = true; renderChunks(); playChunkOriginal(v);
+            }, ['说出来', '说完了']),
+          newSay && !RV.peek ? h('button', { class: 'btn', onclick: () => { RV.peek = true; renderChunks(); } }, '提示语块') : null,
+          h('button', { class: 'btn', onclick: () => { RV.shown = true; renderChunks(); playChunkOriginal(v); } }, '直接看答案'));
+        put(card, h('p', { class: 'hint', text: newSay ? '用这个语块说一句你自己的话（关于你的学习或生活），说完再看答案。' : isWord ? '看挖空的句子，把整句说出来，再看答案。' : v.tpl ? '看中文，用这个句型把整句说出来，再看答案。' : '先开口说出英文，再看答案。说出来比在心里想更能记住。' }), row);
         if (RV.busy) card.append(h('p', { class: 'thinking', text: '识别中…' }));
       } else {
-        card.append(h('div', { class: 'row' }, h('div', { class: 'a' }, isWord ? markWord(v.en, v.cloze) : v.en), sayBtn(v.en)));
-        if (RV.heard != null) card.append(diffView(v.en, RV.heard, RV.words));
+        if (newSay) {
+          if (RV.heard != null) put(card, h('div', { class: 'review-heard' },
+            h('div', { class: 'review-heard-label', text: '你说的：' }),
+            h('p', { class: 'review-heard-line' }, markChunkHeard(RV.heard, v.en))));
+          if (RV.verdict) put(card, h('div', { class: 'review-verdict' },
+            h('span', { class: 'tag ' + (RV.verdict.ok ? 'good' : 'lamp'), text: RV.verdict.ok ? '用对了' : '可以更好' }),
+            RV.verdict.note ? h('span', { class: 'hint', text: RV.verdict.note }) : null));
+          if (RV.verdict?.better) put(card, h('div', { class: 'review-better' },
+            h('div', { class: 'review-better-label', text: '改好的：' }),
+            h('p', { class: 'review-better-text', text: RV.verdict.better }),
+            sayBtn(RV.verdict.better)));
+          put(card, h('div', { class: 'review-answer' },
+            h('div', { class: 'review-answer-label', text: '答案' }),
+            h('div', { class: 'row' }, h('div', { class: 'a' }, v.en), sayBtn(v.en), hasClip(v) ? clipBtn(v) : null)));
+        } else {
+          card.append(h('div', { class: 'row' }, h('div', { class: 'a' }, isWord ? markWord(v.en, v.cloze) : v.en), sayBtn(v.en), hasClip(v) ? clipBtn(v) : null));
+          if (RV.heard != null) card.append(diffView(v.en, RV.heard, RV.words));
+        }
         if (RV.auto) card.append(h('p', { class: 'hint', text: '自动判定：' + GRADES[RV.auto.g][0] + '（' + RV.auto.why + '）。觉得不对就点别的。' }));
         card.append(h('div', { class: 'grades' }, GRADES.map(([t, g]) => h('button', { class: 'btn' + (RV.auto?.g === g ? ' primary' : ''), onclick: () => { S.srs[RV.id] = schedule(v, g); RV.done++; markDay('rv'); RV.id = null; save(); renderChunks(); } }, t, h('small', { text: ivlText(schedule(v, g)) })))));
       }
@@ -1073,7 +1244,7 @@ function renderChunks() {
         ? h('span', { class: 'tpl-line' }, '句型：', tplFrame(v.tpl), [v.zh, v.src].filter(Boolean).length ? ' · ' + [v.zh, v.src].filter(Boolean).join(' · ') : '')
         : [v.zh, v.src].filter(Boolean).join(' · '),
       h('span', { class: 'due', text: '　' + (v.due <= Date.now() ? '待复习' : ymd(new Date(v.due)) + ' 复习') })),
-    h('div', { class: 'tools' }, sayBtn(v.en), h('button', { class: 'btn ghost icon-btn', title: '删除', 'aria-label': '删除', onclick: () => { delete S.srs[id]; save(); renderChunks(); } }, ic('x')))));
+    h('div', { class: 'tools' }, sayBtn(v.en), hasClip(v) ? clipBtn(v, '原声', 'btn ghost small') : null, h('button', { class: 'btn ghost icon-btn', title: '删除', 'aria-label': '删除', onclick: () => { delete S.srs[id]; save(); renderChunks(); } }, ic('x')))));
   if (!items.length) list.append(h('p', { class: 'hint', text: '还没有语块。' }));
   frag.push(h('div', { class: 'section' }, h('h2', { text: '全部语块 · ' + items.length }), list));
   root.replaceChildren(...frag);

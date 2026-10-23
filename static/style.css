@@ -504,3 +504,47 @@ audio.native { width: 100%; height: 40px; }
   .pron-say-line { font-size: 25px; }
   .pron-line { font-size: 20px; }
 }
+
+/* ---------- shadowing: pitch comparison + per-sentence history ---------- */
+.sh-hist { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.sh-bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; }
+.sh-bars i { display: block; width: 3px; min-height: 2px; border-radius: 1px; background: color-mix(in srgb, var(--good) 45%, transparent); }
+.sh-bars i:last-child { background: var(--good); }
+.sent .st.past { color: color-mix(in srgb, var(--muted) 70%, transparent); font-weight: 400; cursor: help; }
+.sh-file-stats { color: var(--muted); }
+
+.pitch-box { display: grid; gap: 8px; padding: 12px 14px 10px; border-radius: var(--r); background: var(--surface-2); }
+.pitch-legend { display: flex; align-items: center; gap: 14px; font-size: 12px; color: var(--muted); }
+.pitch-key { display: inline-flex; align-items: center; gap: 5px; }
+.pitch-swatch { display: inline-block; width: 16px; height: 2px; border-radius: 1px; }
+.pitch-swatch.orig { background: var(--focus); }
+.pitch-swatch.mine { background: var(--accent); }
+.pitch-chart-wrap { min-width: 0; }
+.pitch-chart { display: block; width: 100%; height: auto; overflow: visible; }
+.pitch-line { fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.pitch-orig { stroke: var(--focus); }
+.pitch-mine { stroke: var(--accent); }
+.pitch-zero { stroke: color-mix(in srgb, var(--line) 75%, transparent); stroke-width: 1; }
+.pitch-verdict { font-size: 13px; }
+.pitch-verdict.good { color: var(--good); }
+.pitch-verdict.warn { color: var(--warn); }
+.pitch-hint { font-size: 11px; }
+
+/* ---------- chunk review: say a new sentence with the chunk ---------- */
+.review .new-say-q { font: 500 30px/1.35 var(--f-text); max-width: 100%; }
+.new-say-peek { font-size: 13px; }
+.review-heard { display: grid; gap: 2px; justify-items: center; }
+.review-heard-label, .review-better-label, .review-answer-label { font-size: 12px; color: var(--muted); letter-spacing: .04em; }
+.review-heard-line { margin: 0; }
+.review-heard-text { font: 18px/1.6 var(--f-text); overflow-wrap: anywhere; }
+.chunk-hit { background: var(--accent-soft); color: inherit; border-radius: 3px; padding: 0 2px; }
+.review-verdict { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.review-better { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.review-better-text { font: 18px/1.55 var(--f-text); max-width: 56ch; }
+.review-answer { display: grid; gap: 6px; justify-items: center; width: 100%; padding-top: 8px; border-top: 1px solid var(--line); }
+.review-answer .row { justify-content: center; }
+
+@media (max-width: 600px) {
+  .review .new-say-q { font-size: 24px; }
+  .pitch-box { padding: 10px; }
+}
