@@ -290,7 +290,7 @@ def to_sentences(result: dict) -> list[dict]:
     return out
 
 
-TRANSCRIPT_V = 2  # 2: lines are cut at the pauses a shadowing lesson leaves for the learner (split_at_pauses)
+TRANSCRIPT_V = 3  # 2: lines cut at the pauses left for the learner (split_at_pauses); 3: back-to-back repeats dropped (drop_repeats)
 SPLIT_GAP = 1.5  # s of silence inside one subtitle line that means the lesson stopped for the learner to repeat
 
 
@@ -321,6 +321,22 @@ def split_at_pauses(sent: dict, audio: np.ndarray, transcribe) -> list[dict]:
         if text:
             out.append({"s": s, "e": e, "text": text})
     return out or [sent]
+
+
+def drop_repeats(sents: list[dict]) -> tuple[list[dict], list[int]]:
+    """A shadowing lesson says a chunk two or three times in a row so the learner can repeat it each time; in the
+    sentence list one copy is enough. Returns the kept lines and, for each input line, the index of its kept line."""
+    def words(t: str) -> list[str]:
+        return re.sub(r"[^a-z0-9' ]+", " ", t.lower().replace("’", "'")).split()
+
+    out, at = [], []
+    for st in sents:
+        if out and words(st["text"]) == words(out[-1]["text"]):
+            at.append(len(out) - 1)
+        else:
+            at.append(len(out))
+            out.append(st)
+    return out, at
 
 
 def whisper_text(samples: np.ndarray) -> str:
@@ -614,7 +630,7 @@ def transcribe_file_inproc(rel: str) -> None:
     audio = decode_audio(p)
     res = mlx_whisper.transcribe(audio, path_or_hf_repo=CFG["whisper_model"], language="en", word_timestamps=True,
                                  condition_on_previous_text=False, verbose=None)
-    sents = [p for st in to_sentences(res) for p in split_at_pauses(st, audio, whisper_text)]
+    sents, _ = drop_repeats([p for st in to_sentences(res) for p in split_at_pauses(st, audio, whisper_text)])
     data = {"file": rel, "v": TRANSCRIPT_V, "duration": round(len(audio) / SR, 2), "sentences": sents, "created": time.time()}
     tmp = tpath(rel).with_suffix(".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False), "utf-8")
