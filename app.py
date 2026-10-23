@@ -354,7 +354,7 @@ def fluency(words: list[list]) -> dict:
 
 # ---------------------------------------------------------------- recordings archive
 CURVE_KINDS = {"talk", "baseline", "r432"}  # free monologues: the only kinds whose metrics go on the curves
-KINDS = CURVE_KINDS | {"chat", "shadow", "chunk", "review"}
+KINDS = CURVE_KINDS | {"chat", "shadow", "chunk", "review", "pron"}
 REC_INDEX: dict[str, dict] = {}
 
 

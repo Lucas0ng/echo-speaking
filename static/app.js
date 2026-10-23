@@ -71,7 +71,7 @@ async function stt(blob, ref = '', arch = null) { return (await sttFull(blob, re
 const LEARNER = "The learner is a Chinese graduate student (master's level, roughly IELTS 5.5–6.5 speaking) practising spoken English. Explanations for the learner are in simplified Chinese; English examples are natural, spoken and modern.";
 
 /* ================= state ================= */
-const S = { days: {}, lessons: {}, srs: {}, cards: {}, errs: {}, prefs: { cur: 1, voice: '', ttsRate: 0.95, autoSpeak: true, level: 'normal', rate: 1, blind: false } };
+const S = { days: {}, lessons: {}, srs: {}, cards: {}, errs: {}, pron: { tests: [], drills: {} }, prefs: { cur: 1, voice: '', ttsRate: 0.95, autoSpeak: true, level: 'normal', rate: 1, blind: false } };
 let LESSONS = [], N = 0, STATUS = {}, CFG = null;
 let saveT;
 function save() { clearTimeout(saveT); saveT = setTimeout(() => post('/api/state', S).catch(() => {}), 400); }
@@ -85,7 +85,7 @@ function markLesson(n, step) {
 }
 /* Undo a step marked done by mistake. The day's habit dot stays: something was still practised that day. */
 function unmarkLesson(n, step) { const L = lessonRec(n); delete L[step]; delete L.at; save(); renderHeader(); }
-const DAY_FLAGS = ['sh', 'ph', 'sp', 'rv', 'rt', 'bl', 'er'];
+const DAY_FLAGS = ['sh', 'ph', 'sp', 'rv', 'rt', 'bl', 'er', 'pr'];
 const active = d => { const v = S.days[d]; return !!(v && (v.ch || DAY_FLAGS.some(k => v[k]))); };
 const level = d => { const v = S.days[d]; if (!v) return 0; return Math.min(3, DAY_FLAGS.filter(k => v[k]).length + (v.ch ? 1 : 0)); };
 const lessonsDone = () => Object.values(S.lessons).filter(l => l.sh && l.ph && l.sp).length;
@@ -93,7 +93,7 @@ const lessonsDone = () => Object.values(S.lessons).filter(l => l.sh && l.ph && l
 /* ================= text to speech ================= */
 let VOICES = [];
 function loadVoices() { try { VOICES = speechSynthesis.getVoices().filter(v => /^en[-_]/i.test(v.lang)); } catch { VOICES = []; } }
-try { loadVoices(); speechSynthesis.onvoiceschanged = () => { loadVoices(); if (TAB === 'settings') renderSettings(); }; } catch {}
+try { loadVoices(); speechSynthesis.onvoiceschanged = () => { loadVoices(); if (TAB === 'settings') renderSettings(); else if (TAB === 'pron') renderPron(); }; } catch {}
 function pickVoice() {
   return VOICES.find(v => v.voiceURI === S.prefs.voice)
     || VOICES.find(v => /en-US/i.test(v.lang) && /(Samantha|Ava|Allison|Zoe|Evan|Nathan)/i.test(v.name))
@@ -230,7 +230,7 @@ async function loadRecs() {
   return RECS.list;
 }
 const recAudio = id => '/api/recordings/' + encodeURIComponent(id) + '/audio';
-const KIND_ZH = { talk: '开口说', baseline: '基准录音', r432: '4/3/2 复述', chat: 'AI 对话', shadow: '跟读', chunk: '语块造句', review: '复习' };
+const KIND_ZH = { talk: '开口说', baseline: '基准录音', r432: '4/3/2 复述', chat: 'AI 对话', shadow: '跟读', chunk: '语块造句', review: '复习', pron: '发音练习' };
 const CURVE_KINDS = ['talk', 'baseline', 'r432'];
 const METRICS = [
   { k: 'wpm', zh: '语速', unit: '词/分', better: 'up', digits: 0, tip: '每分钟说出的词数（不算 um、uh），中间的停顿也算进时间。' },
@@ -321,16 +321,37 @@ function diffView(ref, heard, words) {
 
 /* ================= sentence shadowing ================= */
 const SHADOWS = new Map();
+/* First case-insensitive occurrence of the focus words in the sentence, as a character range. */
+function focusRange(text, words) {
+  const s = String(text ?? ''), w = String(words ?? '').trim();
+  if (!w) return null;
+  const at = s.toLowerCase().indexOf(w.toLowerCase());
+  return at < 0 ? null : { start: at, end: at + w.length };
+}
+/* wordify() emits .w spans; walk all children in text order and mark the ones overlapping the focus range. */
+function markFocusWords(box, text, words, kind) {
+  const range = focusRange(text, words);
+  if (!range) return box;
+  let at = 0;
+  for (const node of box.childNodes) {
+    const len = String(node.textContent ?? '').length;
+    if (node.nodeType === 1 && node.classList?.contains('w') && at < range.end && at + len > range.start) {
+      node.classList.add('focus-w', 'focus-w-' + (kind || 'link'));
+    }
+    at += len;
+  }
+  return box;
+}
 class Shadow {
   constructor(path, sents, { onCount, label } = {}) {
     this.path = path; this.sents = sents; this.cur = 0; this.recs = new Map(); this.res = new Map(); this.ai = new Map();
-    this.sa = new Map(); this.saOpen = new Set();
+    this.sa = new Map(); this.saOpen = new Set(); this.focus = new Map();
     this.onCount = onCount; this.label = label || ''; this.auto = false; this.busy = new Set(); this.recording = null;
     this.boothEl = h('div', { class: 'booth' }); this.listEl = h('div', { class: 'script' }); this.barEl = h('div', { class: 'auto-bar' });
   }
   get audio() { return aud(this.path); }
   rerender() { this.renderBooth(); this.renderList(); this.renderBar(); }
-  focus(i) {
+  select(i) {
     this.cur = Math.max(0, Math.min(this.sents.length - 1, i)); this.rerender();
     const r = this.listEl.children[this.cur]; if (r) r.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
@@ -363,7 +384,8 @@ class Shadow {
     const r = this.recs.get(i); if (!r) return;
     this.busy.add('ai' + i); this.rerender();
     try {
-      const j = await aiAudio(r.blob, LEARNER + '\n\nThe audio is the learner shadowing (repeating) this reference sentence after a native speaker:\n"' + this.sents[i].text + '"\nListen carefully to HOW they say it. Judge pronunciation of individual sounds and words, word stress, linking, rhythm and intonation compared with how a native speaker would say this sentence. Be specific and honest; if it sounds good, say so briefly.\nJSON: {"score": integer 1-10 (overall closeness to native delivery), "summary_zh": "中文一句总评", "issues": [{"word": "the word or phrase", "problem_zh": "具体问题（中文）", "tip_zh": "怎么改（中文，可写音标或类似中文发音提示）"}]} with at most 3 issues.');
+      const f = this.focus?.get(i), fp = f && !f.error ? 'This time the learner is practising ONE point: ' + FOCUS_KINDS[f.kind] + ' (' + f.kind + ') on "' + f.words + '", which should sound like "' + f.sound + '". Judge that point first and make it the first issue (or say clearly that they got it).\n' : '';
+      const j = await aiAudio(r.blob, LEARNER + '\n\nThe audio is the learner shadowing (repeating) this reference sentence after a native speaker:\n"' + this.sents[i].text + '"\n' + fp + 'Listen carefully to HOW they say it. Judge pronunciation of individual sounds and words, word stress, linking, rhythm and intonation compared with how a native speaker would say this sentence. Be specific and honest; if it sounds good, say so briefly.\nJSON: {"score": integer 1-10 (overall closeness to native delivery), "summary_zh": "中文一句总评", "issues": [{"word": "the word or phrase", "problem_zh": "具体问题（中文）", "tip_zh": "怎么改（中文，可写音标或类似中文发音提示）"}]} with at most 3 issues.');
       this.ai.set(i, j);
     } catch (e) { this.ai.set(i, { error: e.message }); }
     this.busy.delete('ai' + i); this.rerender();
@@ -386,7 +408,7 @@ class Shadow {
     if (this.auto) { this.auto = false; stopEverything(); Rec.stop(); this.rerender(); return; }
     this.auto = true; this.rerender();
     for (let i = this.cur; i < this.sents.length && this.auto; i++) {
-      this.focus(i);
+      this.select(i);
       const s = this.sents[i];
       if (!(await playSeg(this.audio, s.s, s.e)) || !this.auto) break;
       await this.record(i);
@@ -398,13 +420,44 @@ class Shadow {
       h('span', { class: 'grow', text: this.auto ? '连续跟读中：听一句，灯亮时跟着说，录完自动下一句。' : '连续跟读会从当前句开始，播放一句、录你一句，自动往下走。' }),
       h('button', { class: 'btn ' + (this.auto ? 'rec' : ''), onclick: () => this.runAuto() }, this.auto ? [ic('stop'), '停下'] : [ic('play'), '连续跟读']));
   }
+  focusView(i, rec) {
+    if (S.prefs.focus === false) return null;
+    const f = this.focus.get(i);
+    if (!f) return null;
+    const box = h('div', { class: 'focus-note' });
+    if (f.loading) { box.append(h('p', { class: 'thinking', text: 'AI 在挑这句的练习重点…' })); return box; }
+    if (f.error) {
+      box.append(h('p', { class: 'err' }, f.error, ' ', h('button', { class: 'btn ghost small', onclick: () => { this.focus.delete(i); this.rerender(); } }, '重试')));
+      return box;
+    }
+    const kind = FOCUS_KINDS[f.kind] ? f.kind : 'link';
+    box.append(h('div', { class: 'focus-head' },
+      h('span', { class: 'focus-label', text: '本句练习重点' }),
+      h('span', { class: 'tag focus-tag ' + kind, text: FOCUS_KINDS[kind] }),
+      h('span', { class: 'focus-sound' + (S.prefs.blind && !rec ? ' blind' : ''), text: f.sound || '' })));
+    if (f.tip_zh) box.append(h('p', { class: 'hint focus-tip', text: f.tip_zh }));
+    return box;
+  }
   renderBooth() {
     const i = this.cur, s = this.sents[i]; if (!s) return;
     const rec = this.recs.get(i), res = this.res.get(i), ai = this.ai.get(i), recOn = this.recording === i;
+    if (S.prefs.focus !== false && !this.focus.has(i)) {
+      this.focus.set(i, { loading: true });
+      shadowFocus(this.path, this.sents, i).then(f => {
+        this.focus.set(i, f || { error: 'AI 没有返回这句的练习重点，再试一次。' });
+        if (this.cur === i) this.rerender();
+      }).catch(e => {
+        this.focus.set(i, { error: e.message });
+        if (this.cur === i) this.rerender();
+      });
+    }
     this.boothEl.className = 'booth' + (recOn ? ' live' : '');
+    const fp = S.prefs.focus !== false ? this.focus.get(i) : null;
+    const lineText = markFocusWords(wordify(s.text, { src: this.label }), s.text, fp?.words, fp?.kind);
     const kids = [
       h('div', { class: 'meta' }, h('span', { text: '第 ' + (i + 1) + ' / ' + this.sents.length + ' 句' }), h('span', { text: fmt(s.s) + ' – ' + fmt(s.e) })),
-      h('p', { class: 'line' + (S.prefs.blind && !rec ? ' blind' : '') }, wordify(s.text, { src: this.label })),
+      this.focusView(i, rec),
+      h('p', { class: 'line' + (S.prefs.blind && !rec ? ' blind' : '') }, lineText),
       h('div', { class: 'controls' },
         h('button', { class: 'big-play', title: '听原声', 'aria-label': '听原声', onclick: () => playSeg(this.audio, s.s, s.e) }, ic('play')),
         h('button', { class: 'big-rec' + (recOn ? ' on' : ''), onclick: () => this.record(i) }, recOn ? [h('span', { class: 'rec-dot', style: 'background:#fff' }), '说完了'] : [ic('mic'), rec ? '重新跟读' : '跟读这句']),
@@ -414,8 +467,8 @@ class Shadow {
         h('button', { class: 'btn', disabled: this.busy.has('sa' + i), onclick: () => this.analyze(i) }, this.busy.has('sa' + i) ? 'AI 在拆…' : '拆句型'),
         h('span', { class: 'grow' }),
         chunkBtn(s.text, '', this.label),
-        h('button', { class: 'btn ghost icon-btn', 'aria-label': '上一句', title: '上一句', disabled: i <= 0, onclick: () => this.focus(i - 1) }, ic('left')),
-        h('button', { class: 'btn ghost icon-btn', 'aria-label': '下一句', title: '下一句', disabled: i >= this.sents.length - 1, onclick: () => this.focus(i + 1) }, ic('right'))),
+        h('button', { class: 'btn ghost icon-btn', 'aria-label': '上一句', title: '上一句', disabled: i <= 0, onclick: () => this.select(i - 1) }, ic('left')),
+        h('button', { class: 'btn ghost icon-btn', 'aria-label': '下一句', title: '下一句', disabled: i >= this.sents.length - 1, onclick: () => this.select(i + 1) }, ic('right'))),
     ];
     if (this.busy.has('chk' + i)) kids.push(h('p', { class: 'thinking', text: '本地识别中…' }));
     else if (res?.error) kids.push(h('p', { class: 'err', text: res.error }));
@@ -435,7 +488,7 @@ class Shadow {
       const st = this.recording === i ? h('span', { class: 'st' }, h('span', { class: 'rec-dot' })) :
         res?.score != null ? h('span', { class: 'st' + (res.score >= 80 ? ' ok' : ''), text: res.score + '%' }) :
         rec ? h('span', { class: 'st ok' }, ic('check')) : h('span', { class: 'st' });
-      return h('div', { class: 'sent' + (i === this.cur ? ' cur' : ''), onclick: () => this.focus(i) },
+      return h('div', { class: 'sent' + (i === this.cur ? ' cur' : ''), onclick: () => this.select(i) },
         h('span', { class: 'ts', text: fmt(s.s) }), h('span', { class: 'tx' + (S.prefs.blind && !rec ? ' blind' : ''), text: s.text }), st);
     }));
     this.listEl.scrollTop = keep;
@@ -476,12 +529,12 @@ function renderHeader() {
 let TAB = 'today';
 function setTab(t) {
   if (t === 'log') t = 'progress';
-  if (!['today', 'retell', 'chunks', 'errors', 'chat', 'progress', 'settings'].includes(t)) t = 'today';
+  if (!['today', 'retell', 'chunks', 'errors', 'pron', 'chat', 'progress', 'settings'].includes(t)) t = 'today';
   if (TAB !== t) stopEverything();
   TAB = t;
   $$('.nav a').forEach(a => a.setAttribute('aria-selected', String(a.dataset.tab === t)));
   $$('main[data-view]').forEach(m => { m.hidden = m.dataset.view !== t; });
-  ({ today: renderToday, retell: renderRetell, chunks: renderChunks, errors: renderErrors, chat: renderChat, progress: renderProgress, settings: renderSettings })[t]();
+  ({ today: renderToday, retell: renderRetell, chunks: renderChunks, errors: renderErrors, pron: renderPron, chat: renderChat, progress: renderProgress, settings: renderSettings })[t]();
   if (location.hash !== '#' + t) history.replaceState(null, '', '#' + t);
 }
 $$('.nav a').forEach(a => a.addEventListener('click', e => { e.preventDefault(); setTab(a.dataset.tab); }));
@@ -513,7 +566,8 @@ function micButton(owner, onBlob, labels = ['说', '停']) {
   } }, on ? [h('span', { class: 'rec-dot', style: 'background:#fff' }), labels[1]] : [ic('mic'), labels[0]]);
 }
 function rerenderOwner(owner) {
-  if (String(owner).startsWith('chat')) renderChat();
+  if (String(owner).startsWith('pron')) renderPron();
+  else if (String(owner).startsWith('chat')) renderChat();
   else if (String(owner).startsWith('rev')) renderChunks();
   else if (String(owner).startsWith('err')) renderErrors();
   else renderToday();
@@ -578,6 +632,7 @@ async function buildStep1(panel, n, L, rec) {
       sh.view(),
       h('div', { class: 'script-bar' },
         h('span', {}, '速度'), seg([0.75, 0.85, 1], S.prefs.rate, v => { S.prefs.rate = v; save(); }),
+        h('label', { class: 'row' }, h('input', { type: 'checkbox', checked: S.prefs.focus !== false, onchange: e => { S.prefs.focus = e.target.checked; save(); sh.rerender(); } }), '每句一个练习重点'),
         h('label', { class: 'row' }, h('input', { type: 'checkbox', checked: S.prefs.blind, onchange: e => { S.prefs.blind = e.target.checked; save(); sh.rerender(); } }), '盲跟：跟读前不显示原文'),
         h('span', { class: 'grow' }), h('span', { class: 'mono', text: '已跟读 ' + sh.recs.size + ' / ' + sh.sents.length + ' 句' })),
       needKeyNote('omni'));
@@ -1186,6 +1241,286 @@ function renderErrors() {
   root.replaceChildren(...frag);
 }
 
+/* ================= PRON (发音) ================= */
+const PR = {
+  view: 'home', cid: '', err: '',
+  rounds: [], testRound: 0, testItems: [], testBusy: false, testErr: '', testTok: 0,
+  listenIdx: 0, listenScore: 0, listenTrial: null, listenAnswer: null, listenFinished: false, listenLastVoice: null,
+  sayIdx: 0, sayScore: 0, sayTrial: null, sayResult: null, sayBusy: false, sayFinished: false, sayUrl: null, sayErr: '',
+};
+const pronScoreText = s => (s ? s.ok + '/' + s.n : '0/0');
+const pronWrongText = it => '该说 ' + it.word + '，听起来像 ' + (it.heard || it.partner);
+function pronVoiceNote() {
+  if (pronVoices().length >= 2) return null;
+  return h('div', { class: 'notice' }, h('p', { class: 'hint warn', text: '系统里的英语声音少于 2 个，听辨效果会打折。可以在 系统设置 › 辅助功能 › 朗读内容 › 系统声音 › 管理声音 里多下载几个英语声音（美式、英式、澳式各一两个）。' }));
+}
+function pronStartTest() {
+  PR.view = 'test'; PR.rounds = pronTestRounds(); PR.testRound = 0; PR.testItems = []; PR.testTok++;
+  PR.testBusy = false; PR.testErr = '';
+  renderPron(); window.scrollTo({ top: 0 });
+}
+function pronTestView() {
+  const box = h('div', { class: 'section' }, h('h2', { text: '发音体检' }));
+  const rounds = PR.rounds, k = PR.testRound, items = rounds[k] || [];
+  if (!items.length) {
+    box.append(h('p', { class: 'err', text: '这一轮没有可用的体检题。' }), h('button', { class: 'btn', onclick: () => { PR.view = 'home'; renderPron(); } }, '返回'));
+    return box;
+  }
+  const mb = micButton('pron-test', async blob => {
+    const tok = PR.testTok;
+    if (PR.view !== 'test') return;
+    PR.testBusy = true; PR.testErr = ''; renderPron();
+    try {
+      const j = await sttFull(blob, '', { kind: 'pron', meta: { test: true, round: PR.testRound + 1 } });
+      if (tok !== PR.testTok || PR.view !== 'test') return;
+      const got = pronParse(j.text, j.words, PR.rounds[PR.testRound] || []);
+      PR.testBusy = false;
+      // a round mostly unheard (too quiet, too fast, not read) must not become a check-up: the first one is the baseline
+      const unclear = got.filter(x => x.ok == null).length;
+      if (unclear > got.length / 2) { PR.testErr = '这一轮有 ' + unclear + ' 个词没听清（可能声音太小、读得太快，或没读完），这一轮不算，请再读一遍。'; renderPron(); return; }
+      PR.testItems.push(...got);
+      if (PR.testRound + 1 < PR.rounds.length) { PR.testRound++; renderPron(); }
+      else {
+        pronSaveTest(PR.testItems); markDay('pr');
+        PR.view = 'home'; PR.testRound = 0; PR.rounds = []; PR.testItems = [];
+        renderPron(); window.scrollTo({ top: 0 });
+      }
+    } catch (e) { PR.testBusy = false; PR.testErr = e.message; renderPron(); }
+  }, ['开始读', '读完点停']);
+  if (PR.testBusy) mb.disabled = true;
+  put(box,
+    h('div', { class: 'row' }, h('span', { class: 'tag', text: '第 ' + (k + 1) + ' / ' + rounds.length + ' 轮' }),
+      h('span', { class: 'hint', text: '按顺序读这 ' + items.length + ' 个词，像念单词表一样每个词后面停一下，读完点停。' })),
+    h('ol', { class: 'pron-lines' }, items.map((it, idx) => h('li', {},
+      h('span', { class: 'n', text: (idx + 1) + '.' }), h('span', { class: 'pron-line', text: pronLine(it.word) })))),
+    h('div', { class: 'row' }, mb),
+    PR.testBusy ? h('p', { class: 'thinking', text: '本机识别中…' }) : null,
+    PR.testErr ? h('p', { class: 'err', text: PR.testErr }) : null,
+    h('div', { class: 'row' }, h('button', { class: 'btn ghost', onclick: () => {
+      if (Rec.isOn('pron-test')) Rec.stop();
+      stopEverything(); PR.testTok++; PR.view = 'home'; PR.testItems = []; PR.rounds = []; PR.testRound = 0; PR.testErr = ''; PR.testBusy = false;
+      renderPron();
+    } }, '放弃这次体检')));
+  return box;
+}
+function pronTestSection() {
+  const tests = pron().tests || [];
+  const box = h('div', { class: 'section' }, h('h2', { text: '发音体检' }));
+  if (!tests.length) {
+    box.append(
+      h('p', { class: 'hint', text: '20 个词，分 2 轮读完。每轮录一次，本机识别判断你把每个词读成了哪一个。' }),
+      h('button', { class: 'btn primary', onclick: pronStartTest }, '开始发音体检（约 2 分钟）'));
+    return box;
+  }
+  const latest = tests[tests.length - 1], sc = pronTestScore(latest), firstSc = pronTestScore(tests[0]);
+  const focusList = pronFocusList(), focusIds = new Set(focusList.map(x => x.cid));
+  const order = [...focusList.map(x => contrast(x.cid)).filter(Boolean), ...CONTRASTS.filter(c => !focusIds.has(c.id))];
+  const list = h('div', { class: 'pron-tests' });
+  for (const c of order) {
+    const s = sc[c.id] || { ok: 0, n: 0, wrong: [] };
+    const unclear = latest.items.filter(x => x.cid === c.id && x.ok == null).length;
+    const kids = [h('div', { class: 'row' },
+      h('b', { class: 'pron-label', text: c.label }),
+      h('span', { class: 'tag', text: c.zh }),
+      focusIds.has(c.id) ? h('span', { class: 'tag lamp', text: '要练' }) : null,
+      h('span', { class: 'grow' }),
+      h('span', { class: 'tag ' + (s.n && s.ok === s.n ? 'good' : s.n ? 'lamp' : ''), text: pronScoreText(s) }))];
+    if (tests.length >= 2) {
+      const f = firstSc[c.id] || { ok: 0, n: 0 };
+      kids.push(h('p', { class: 'pron-compare', text: '第 1 次 ' + pronScoreText(f) + ' → 最新 ' + pronScoreText(s) }));
+    }
+    for (const w of s.wrong || []) kids.push(h('p', { class: 'pron-wrong', text: pronWrongText(w) }));
+    if (unclear) kids.push(h('p', { class: 'hint', text: unclear + ' 句没听清，不计分' }));
+    list.append(h('div', { class: 'pron-test-row' }, kids));
+  }
+  box.append(
+    h('p', { class: 'hint', text: '最近一次：' + ymd(new Date(latest.t)) + ' · 共 ' + latest.items.length + ' 句' }),
+    list,
+    h('div', { class: 'row' }, h('button', { class: 'btn', onclick: pronStartTest }, '再做一次体检'),
+      h('span', { class: 'hint', text: '建议每月一次，和第 1 次对比 · 上次体检 ' + ymd(new Date(latest.t)) })));
+  return box;
+}
+function pronCard(c, found) {
+  const st = pronStats(c.id);
+  const acc = s => (s.n ? '最近 ' + s.ok + '/' + s.n : '还没练');
+  return h('div', { class: 'pron-card' },
+    h('div', { class: 'row' }, h('b', { class: 'pron-label', text: c.label }), h('span', { class: 'tag', text: c.zh }),
+      found ? h('span', { class: 'tag lamp', text: '体检发现' }) : null),
+    h('p', { class: 'hint', text: c.tip_zh }),
+    h('div', { class: 'pron-stats' }, h('span', { text: '听辨 ' + acc(st.listen) }), h('span', { text: '发音 ' + acc(st.say) })),
+    h('div', { class: 'row' },
+      h('button', { class: 'btn', onclick: () => pronStartListen(c.id) }, '练听辨'),
+      h('button', { class: 'btn', onclick: () => pronStartSay(c.id) }, '练发音')));
+}
+function pronPracticeSection() {
+  const box = h('div', { class: 'section' }, h('h2', { text: '练习' }));
+  const hasTests = (pron().tests || []).length > 0, focus = hasTests ? pronFocusList() : [];
+  if (!hasTests) {
+    box.append(h('p', { class: 'hint', text: '先做体检能找出你最该练的。' }),
+      h('div', { class: 'pron-list' }, CONTRASTS.map(c => pronCard(c, false))));
+    return box;
+  }
+  if (focus.length) {
+    box.append(h('p', { class: 'hint', text: '体检发现，这些组最容易混：' }),
+      h('div', { class: 'pron-list' }, focus.map(f => contrast(f.cid)).filter(Boolean).map(c => pronCard(c, true))));
+  } else box.append(h('p', { class: 'hint', text: '这次体检没有发现明显要练的组。' }));
+  const rest = CONTRASTS.filter(c => !focus.some(f => f.cid === c.id));
+  if (rest.length) box.append(h('details', {},
+    h('summary', { text: '其他常见混淆' }),
+    h('div', { class: 'pron-list' }, rest.map(c => pronCard(c, false)))));
+  return box;
+}
+function pronStartListen(cid) {
+  PR.view = 'listen'; PR.cid = cid; PR.listenIdx = 0; PR.listenScore = 0;
+  PR.listenTrial = null; PR.listenAnswer = null; PR.listenFinished = false; PR.listenLastVoice = null;
+  pronNextListen();
+}
+function pronNextListen() {
+  const t = pronListenTrial(PR.cid, PR.listenLastVoice);
+  PR.listenTrial = t; PR.listenLastVoice = t.voice || null; PR.listenAnswer = null;
+  pronSpeak(t.word, t.voice);
+  renderPron(); window.scrollTo({ top: 0 });
+}
+function pronListenAnswer(picked) {
+  if (PR.listenAnswer || !PR.listenTrial) return;
+  const t = PR.listenTrial, ok = picked === t.word;
+  PR.listenAnswer = { picked, ok };
+  if (ok) PR.listenScore++;
+  pronRecord(PR.cid, 'listen', t.word, ok);
+  if (PR.listenIdx + 1 >= 10) { PR.listenFinished = true; markDay('pr'); }
+  renderPron();
+}
+function pronListenView() {
+  const c = contrast(PR.cid) || { label: '', zh: '', tip_zh: '' }, t = PR.listenTrial;
+  const box = h('div', { class: 'section' },
+    h('div', { class: 'row' }, h('button', { class: 'btn ghost', onclick: () => { PR.view = 'home'; PR.listenTrial = null; renderPron(); window.scrollTo({ top: 0 }); } }, ic('left'), '返回'),
+      h('span', { class: 'grow' }), h('span', { class: 'tag', text: '第 ' + (PR.listenIdx + 1) + ' / 10 题' })),
+    h('h2', { text: '听辨练习 · ' + c.label }), c.zh ? h('p', { class: 'hint', text: c.zh }) : null);
+  if (!t) {
+    box.append(h('p', { class: 'err', text: '这一组暂时没有可用的词对。' }), h('button', { class: 'btn', onclick: () => { PR.view = 'home'; renderPron(); } }, '返回'));
+    return box;
+  }
+  const ans = PR.listenAnswer;
+  const card = h('div', { class: 'pron-drill' },
+    h('p', { class: 'pron-question', text: '听到的是哪个词？' }),
+    h('div', { class: 'pron-options' }, t.options.map(w => h('button', {
+      class: 'pron-option' + (ans ? (w === t.word ? ' correct' : '') + (ans.picked === w && !ans.ok ? ' wrong' : '') : ''),
+      disabled: !!ans, onclick: () => pronListenAnswer(w),
+    }, w))),
+    h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => pronSpeak(t.word, t.voice) }, ic('speak'), '再听一遍')));
+  if (ans) {
+    card.append(h('p', { class: 'pron-feedback ' + (ans.ok ? 'ok' : 'bad') }, ans.ok ? '✓ 答对了' : '✗ 是 ' + t.word),
+      h('p', { class: 'hint', text: '这次的声音：' + (t.voice?.name || '系统默认声音') }));
+  }
+  if (ans && !PR.listenFinished) card.append(h('button', { class: 'btn primary', onclick: () => { PR.listenIdx++; pronNextListen(); } }, '下一题'));
+  if (PR.listenFinished) {
+    card.append(h('div', { class: 'pron-drill-result' },
+      h('p', { class: 'pron-score-big', text: PR.listenScore + ' / 10' }),
+      h('p', { class: 'hint', text: '换不同的声音再听一轮，听辨才会真的变好。' }),
+      h('div', { class: 'row' },
+        h('button', { class: 'btn primary', onclick: () => {
+          PR.listenIdx = 0; PR.listenScore = 0; PR.listenFinished = false; PR.listenAnswer = null; PR.listenTrial = null; PR.listenLastVoice = null;
+          pronNextListen();
+        } }, '再来 10 题'),
+        h('button', { class: 'btn', onclick: () => { PR.view = 'home'; PR.listenTrial = null; renderPron(); window.scrollTo({ top: 0 }); } }, '返回'))));
+  }
+  box.append(card);
+  return box;
+}
+function pronDropSayUrl() { if (PR.sayUrl) { URL.revokeObjectURL(PR.sayUrl); PR.sayUrl = null; } }
+function pronStartSay(cid) {
+  PR.view = 'say'; PR.cid = cid; PR.sayIdx = 0; PR.sayScore = 0; PR.sayFinished = false;
+  PR.sayBusy = false; PR.sayErr = ''; PR.sayResult = null; PR.sayTrial = null;
+  pronNextSay();
+}
+function pronNextSay() {
+  pronDropSayUrl();
+  PR.sayTrial = pronSayTrial(PR.cid); PR.sayResult = null; PR.sayBusy = false; PR.sayErr = '';
+  renderPron(); window.scrollTo({ top: 0 });
+}
+function pronSayLine(word) {
+  const line = pronLine(word), at = line.toLowerCase().indexOf(String(word).toLowerCase());
+  if (at < 0) return h('div', { class: 'pron-say-line' }, h('b', { text: word }));
+  return h('div', { class: 'pron-say-line' }, line.slice(0, at), h('b', { text: line.slice(at, at + String(word).length) }), line.slice(at + String(word).length));
+}
+function pronSayView() {
+  const c = contrast(PR.cid) || { label: '', zh: '', tip_zh: '' }, t = PR.sayTrial;
+  const box = h('div', { class: 'section' },
+    h('div', { class: 'row' }, h('button', { class: 'btn ghost', onclick: () => { pronDropSayUrl(); PR.view = 'home'; PR.sayTrial = null; renderPron(); window.scrollTo({ top: 0 }); } }, ic('left'), '返回'),
+      h('span', { class: 'grow' }), h('span', { class: 'tag', text: '第 ' + (PR.sayIdx + 1) + ' / 10 题' })),
+    h('h2', { text: '发音练习 · ' + c.label }), c.zh ? h('p', { class: 'hint', text: c.zh }) : null);
+  if (!t) {
+    box.append(h('p', { class: 'err', text: '这一组暂时没有可用的词对。' }), h('button', { class: 'btn', onclick: () => { PR.view = 'home'; renderPron(); } }, '返回'));
+    return box;
+  }
+  const answered = !!(PR.sayResult && PR.sayResult.ok != null);
+  const card = h('div', { class: 'pron-drill' }, pronSayLine(t.word));
+  const mb = micButton('pron-say', async blob => {
+    PR.sayBusy = true; PR.sayErr = ''; PR.sayResult = null; renderPron();
+    try {
+      const j = await sttFull(blob, '', { kind: 'pron', meta: { cid: PR.cid, word: t.word } });
+      const r = pronSayJudge(t, j.text, j.words);
+      PR.sayBusy = false;
+      if (r.ok == null) { PR.sayResult = { unclear: true }; renderPron(); return; }
+      pronDropSayUrl(); PR.sayUrl = URL.createObjectURL(blob);
+      pronRecord(PR.cid, 'say', t.word, r.ok, r.heard);
+      if (r.ok) PR.sayScore++;
+      PR.sayResult = { ok: r.ok, heard: r.heard };
+      if (PR.sayIdx + 1 >= 10) { PR.sayFinished = true; markDay('pr'); }
+      renderPron();
+    } catch (e) { PR.sayBusy = false; PR.sayErr = e.message; renderPron(); }
+  }, ['说这个词', '说完了']);
+  if (PR.sayBusy) mb.disabled = true;
+  card.append(h('div', { class: 'row' },
+    h('button', { class: 'btn', onclick: () => pronSpeak(pronLine(t.word), pick(pronVoices())) }, ic('speak'), '听示范'),
+    answered ? null : mb));
+  if (PR.sayBusy) card.append(h('p', { class: 'thinking', text: '本机识别中…' }));
+  if (PR.sayResult?.unclear) card.append(h('p', { class: 'hint warn', text: '没听清，再说一次（这次不算）' }));
+  if (answered) {
+    const good = PR.sayResult.ok;
+    card.append(h('p', { class: 'pron-feedback ' + (good ? 'ok' : 'bad') }, good ? '听起来是 ' + t.word + ' ✓' : '听起来像 ' + (PR.sayResult.heard || t.partner) + ' ✗'));
+    if (!good && c.tip_zh) card.append(h('p', { class: 'hint', text: c.tip_zh }));
+    card.append(h('div', { class: 'row' },
+      PR.sayUrl ? h('button', { class: 'btn', onclick: () => playBlobUrl(PR.sayUrl) }, ic('play'), '听我的') : null,
+      !PR.sayFinished ? h('button', { class: 'btn primary', onclick: () => { PR.sayIdx++; pronNextSay(); } }, '下一题') : null));
+  }
+  if (PR.sayFinished) {
+    card.append(h('div', { class: 'pron-drill-result' },
+      h('p', { class: 'pron-score-big', text: PR.sayScore + ' / 10' }),
+      h('p', { class: 'hint', text: '重点是别人能不能听出这个词，不是口音像不像母语者。' }),
+      h('div', { class: 'row' },
+        h('button', { class: 'btn primary', onclick: () => {
+          PR.sayIdx = 0; PR.sayScore = 0; PR.sayFinished = false; PR.sayResult = null; PR.sayTrial = null;
+          pronNextSay();
+        } }, '再来 10 题'),
+        h('button', { class: 'btn', onclick: () => { pronDropSayUrl(); PR.view = 'home'; PR.sayTrial = null; renderPron(); window.scrollTo({ top: 0 }); } }, '返回'))));
+  }
+  if (PR.sayErr) card.append(h('p', { class: 'err', text: PR.sayErr }));
+  box.append(card);
+  return box;
+}
+function renderPron() {
+  const root = $('#view-pron'); if (root.hidden) return;
+  const frag = [h('h2', { class: 'page-title', text: '发音' })];
+  if (PR.view === 'home') {
+    frag.push(h('p', { class: 'intro', text: '目标是让别人听得懂，不追求母语口音。先做一次发音体检，找出你最容易混的音；再针对练：先听辨（换不同的声音念给你听），再自己说，本机识别判断听起来像哪个词。' }));
+    const vn = pronVoiceNote(); if (vn) frag.push(vn);
+    frag.push(pronTestSection(), pronPracticeSection());
+  } else if (PR.view === 'test') {
+    const vn = pronVoiceNote(); if (vn) frag.push(vn);
+    frag.push(pronTestView());
+  } else if (PR.view === 'listen') {
+    const vn = pronVoiceNote(); if (vn) frag.push(vn);
+    frag.push(pronListenView());
+  } else if (PR.view === 'say') {
+    const vn = pronVoiceNote(); if (vn) frag.push(vn);
+    frag.push(pronSayView());
+  } else {
+    PR.view = 'home'; return renderPron();
+  }
+  root.replaceChildren(...frag);
+}
+
 /* ================= CHAT ================= */
 const SCEN = {
   topic: { label: '今日话题', role: n => 'You are a friendly IELTS speaking partner. Talk with the learner about "' + LESSONS[n - 1].t + '" in the style of IELTS Part ' + LESSONS[n - 1].p + ' and Part 3 follow-ups. Ask one question at a time. Give the learner chances to use the chunk "' + LESSONS[n - 1].x + '".' },
@@ -1499,7 +1834,7 @@ async function renderSettings() {
     const [ls, st] = await Promise.all([api('/api/lessons'), api('/api/status')]);
     LESSONS = ls.lessons; N = LESSONS.length; STATUS = st;
     await Promise.all([
-      api('/api/state').then(d => { for (const k of ['days', 'lessons', 'srs', 'cards', 'errs']) if (d[k]) S[k] = d[k]; Object.assign(S.prefs, d.prefs || {}); }).catch(() => {}),
+      api('/api/state').then(d => { for (const k of ['days', 'lessons', 'srs', 'cards', 'errs', 'pron']) if (d[k]) S[k] = d[k]; Object.assign(S.prefs, d.prefs || {}); }).catch(() => {}),
       loadRecs()]);
   } catch (e) { $('#view-today').replaceChildren(h('p', { class: 'err', text: e.message })); return; }
   if (!S.prefs.cur || S.prefs.cur > N) S.prefs.cur = 1;
