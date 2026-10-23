@@ -193,6 +193,24 @@ const Rec = {
     this.mr = mr; this.owner = owner; mr.start();
   },
   stop() { if (this.mr && this.mr.state !== 'inactive') this.mr.stop(); return this.done; },
+  /* Stops the current recording once the speaker has talked and then stayed quiet for `quiet` s, or after `max` s. */
+  autoStop(max, quiet = 1.5) {
+    const mr = this.mr; if (!mr) return;
+    const cap = setTimeout(() => { if (this.mr === mr) this.stop(); }, max * 1000);
+    try {
+      this.ctx ||= new AudioContext(); this.ctx.resume?.();
+      const src = this.ctx.createMediaStreamSource(this.stream), an = this.ctx.createAnalyser(); an.fftSize = 1024; src.connect(an);
+      const buf = new Float32Array(an.fftSize), t0 = performance.now(); let floor = Infinity, spoke = 0, lastLoud = 0;
+      const iv = setInterval(() => {
+        const now = performance.now();
+        if (this.mr !== mr) { clearInterval(iv); clearTimeout(cap); src.disconnect(); return; }
+        an.getFloatTimeDomainData(buf); let s = 0; for (const v of buf) s += v * v; const rms = Math.sqrt(s / buf.length);
+        if (now - t0 < 300) { floor = Math.min(floor, rms); return; } // room noise before the first word
+        if (rms > Math.max(0.02, floor * 3)) { spoke += 50; lastLoud = now; }
+        if (spoke >= 300 && now - lastLoud > quiet * 1000) this.stop();
+      }, 50);
+    } catch { /* no Web Audio: the cap still stops it */ }
+  },
   isOn(owner) { return !!this.mr && (owner == null || this.owner === owner); },
 };
 
@@ -257,25 +275,40 @@ function baseDue(b) { const rs = baseRecs(b); return !rs.length || Date.now() - 
 
 /* ================= word matching ================= */
 const nt = t => t.toLowerCase().replace(/[’‘]/g, "'").replace(/[^a-z0-9']/g, '');
-function align(refText, heardText) {
+function lev(a, b) {
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
+}
+// one letter off in a long word is a spelling variant (EELTSCAST), not a missed word; "car" for "career" still misses
+const near = (a, b) => a === b || (Math.min(a.length, b.length) >= 5 && lev(a, b) <= 1);
+const WEAK = 0.5; // Whisper's own word probability below this means it guessed: the word was probably not said clearly
+/* heardWords: [[word, start, end, probability], ...] from /api/stt; without them every heard word counts as clear */
+function align(refText, heardText, heardWords) {
   const toks = refText.split(/\s+/).filter(Boolean);
-  const R = toks.map(nt), H = heardText.split(/\s+/).map(nt).filter(Boolean);
+  const R = toks.map(nt);
+  const Hw = (heardWords?.length ? heardWords.map(w => ({ t: nt(w[0]), p: w[3] ?? 1 })) : heardText.split(/\s+/).map(t => ({ t: nt(t), p: 1 }))).filter(x => x.t);
+  const H = Hw.map(x => x.t);
   const idx = R.map((w, i) => (w ? i : -1)).filter(i => i >= 0);
   const r = idx.map(i => R[i]);
   const n = r.length, m = H.length;
   const dp = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
-  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) dp[i][j] = r[i] === H[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) dp[i][j] = near(r[i], H[j]) ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
   const hit = new Array(toks.length).fill(null); let i = 0, j = 0;
-  while (i < n && j < m) { if (r[i] === H[j]) { hit[idx[i]] = true; i++; j++; } else if (dp[i + 1][j] >= dp[i][j + 1]) i++; else j++; }
+  while (i < n && j < m) { if (near(r[i], H[j])) { hit[idx[i]] = Hw[j].p < WEAK ? 'weak' : true; i++; j++; } else if (dp[i + 1][j] >= dp[i][j + 1]) i++; else j++; }
   for (const k of idx) if (hit[k] == null) hit[k] = false;
-  const got = idx.filter(k => hit[k]).length;
-  return { toks, hit, score: n ? Math.round(got / n * 100) : 0 };
+  const clear = idx.filter(k => hit[k] === true).length, weak = idx.filter(k => hit[k] === 'weak').length;
+  return { toks, hit, weak, score: n ? Math.round((clear + weak / 2) / n * 100) : 0 };
 }
-function diffView(ref, heard, score) {
-  const a = align(ref, heard);
+function diffView(ref, heard, words) {
+  const a = align(ref, heard || '', words);
   return h('div', { class: 'diff' },
-    a.toks.map((t, k) => [h('span', { class: a.hit[k] === false ? 'miss' : 'hit', text: t }), ' ']),
-    h('span', { class: 'heard', text: '识别到：' + (heard || '（没听清）') + '　·　对上 ' + (score ?? a.score) + '%' }));
+    a.toks.map((t, k) => [h('span', { class: a.hit[k] === false ? 'miss' : a.hit[k] === 'weak' ? 'weak' : 'hit', title: a.hit[k] === 'weak' ? '识别没把握，可能没读清楚' : null, text: t }), ' ']),
+    h('span', { class: 'heard', text: '识别到：' + (heard || '（没听到说话）') + '　·　对上 ' + a.score + '%' + (a.weak ? '　·　' + a.weak + ' 个词可能没读清楚（黄色）' : '') }));
 }
 
 /* ================= sentence shadowing ================= */
@@ -297,8 +330,8 @@ class Shadow {
     if (Rec.isOn(this)) { Rec.stop(); return; }
     try { await Rec.start(this); } catch (e) { alertBox(e.message); return; }
     this.recording = i; this.rerender();
-    const t = setTimeout(() => Rec.stop(), (this.dur(i) * 1.5 + 1.6) * 1000);
-    const blob = await Rec.done; clearTimeout(t); this.recording = null;
+    Rec.autoStop(Math.max(10, this.dur(i) * 3 + 4));
+    const blob = await Rec.done; this.recording = null;
     if (blob.size < 800) { this.rerender(); return; }
     const old = this.recs.get(i); if (old) URL.revokeObjectURL(old.url);
     this.recs.set(i, { blob, url: URL.createObjectURL(blob) });
@@ -310,7 +343,10 @@ class Shadow {
   async check(i) {
     const r = this.recs.get(i); if (!r) return;
     this.busy.add('chk' + i); this.rerender();
-    try { const heard = await stt(r.blob, this.sents[i].text, { kind: 'shadow', meta: { src: this.label, ref: this.sents[i].text } }); this.res.set(i, { heard, score: align(this.sents[i].text, heard).score }); }
+    try {
+      const ref = this.sents[i].text, j = await sttFull(r.blob, ref, { kind: 'shadow', meta: { src: this.label, ref } });
+      this.res.set(i, { heard: j.text, words: j.words, score: align(ref, j.text, j.words).score });
+    }
     catch (e) { this.res.set(i, { error: e.message }); }
     this.busy.delete('chk' + i); this.rerender();
   }
@@ -360,8 +396,8 @@ class Shadow {
     ];
     if (this.busy.has('chk' + i)) kids.push(h('p', { class: 'thinking', text: '本地识别中…' }));
     else if (res?.error) kids.push(h('p', { class: 'err', text: res.error }));
-    else if (res) kids.push(diffView(s.text, res.heard, res.score));
-    else if (!rec) kids.push(h('p', { class: 'hint', text: '听一遍原声，再按「跟读这句」。录完会自动比对，标出没说清的词。' }));
+    else if (res) kids.push(diffView(s.text, res.heard, res.words));
+    else if (!rec) kids.push(h('p', { class: 'hint', text: '听一遍原声，再按「跟读这句」。说完停顿一下会自动结束，录完自动比对，标出没说清的词。' }));
     if (ai) kids.push(ai.error ? h('p', { class: 'err', text: ai.error }) : h('div', { class: 'ai-note' },
       h('div', { class: 'row' }, ai.score != null ? h('span', { class: 'tag lamp', text: '发音 ' + ai.score + ' / 10' }) : null, h('span', { text: esc(ai.summary_zh) })),
       (ai.issues || []).slice(0, 3).map(x => h('div', { class: 'small' }, h('b', { text: esc(x.word) }), '：' + esc(x.problem_zh) + (x.tip_zh ? '。' + x.tip_zh : '')))));
@@ -664,7 +700,7 @@ function renderChunks() {
   const due = dueList();
   const frag = [h('h2', { class: 'page-title', text: '语块本' })];
   if (RV.on) {
-    if (!RV.id || !S.srs[RV.id] || S.srs[RV.id].due > Date.now()) { RV.id = due[0]?.[0] || null; RV.shown = false; RV.heard = null; }
+    if (!RV.id || !S.srs[RV.id] || S.srs[RV.id].due > Date.now()) { RV.id = due[0]?.[0] || null; RV.shown = false; RV.heard = null; RV.words = null; }
     if (!RV.id) { RV.on = false; frag.push(h('div', { class: 'next-cta' }, h('span', { text: '今天的复习完成了，一共 ' + RV.done + ' 条。' }), h('button', { class: 'btn', onclick: () => { RV.done = 0; renderChunks(); } }, '好'))); }
     else {
       const v = S.srs[RV.id];
@@ -674,12 +710,12 @@ function renderChunks() {
       if (!RV.shown) {
         card.append(h('p', { class: 'hint', text: '先开口说出英文，再看答案。说出来比在心里想更能记住。' }),
           h('div', { class: 'row' },
-            micButton('rev', async blob => { RV.busy = true; renderChunks(); try { RV.heard = await stt(blob, v.en, { kind: 'review', meta: { ref: v.en } }); } catch (e) { alertBox(e.message); } RV.busy = false; RV.shown = true; renderChunks(); say(v.en); }, ['说出来', '说完了']),
+            micButton('rev', async blob => { RV.busy = true; renderChunks(); try { const j = await sttFull(blob, v.en, { kind: 'review', meta: { ref: v.en } }); RV.heard = j.text; RV.words = j.words; } catch (e) { alertBox(e.message); } RV.busy = false; RV.shown = true; renderChunks(); say(v.en); }, ['说出来', '说完了']),
             h('button', { class: 'btn', onclick: () => { RV.shown = true; renderChunks(); say(v.en); } }, '直接看答案')));
         if (RV.busy) card.append(h('p', { class: 'thinking', text: '识别中…' }));
       } else {
         card.append(h('div', { class: 'row' }, h('div', { class: 'a', text: v.en }), sayBtn(v.en)));
-        if (RV.heard != null) card.append(diffView(v.en, RV.heard));
+        if (RV.heard != null) card.append(diffView(v.en, RV.heard, RV.words));
         card.append(h('div', { class: 'grades' }, [['忘了', 0], ['模糊', 1], ['想起来了', 2], ['脱口而出', 3]].map(([t, g]) => h('button', { class: 'btn', onclick: () => { S.srs[RV.id] = schedule(v, g); RV.done++; markDay('rv'); RV.id = null; save(); renderChunks(); } }, t, h('small', { text: ivlText(schedule(v, g)) })))));
       }
       frag.push(card, h('div', { class: 'row' }, h('button', { class: 'btn ghost', onclick: () => { RV.on = false; renderChunks(); } }, '先停在这')));
@@ -961,6 +997,17 @@ async function renderSettings() {
   const root = $('#view-settings'); if (root.hidden) return;
   try { CFG = await api('/api/config'); STATUS = await api('/api/status'); } catch (e) { root.replaceChildren(h('p', { class: 'err', text: e.message })); return; }
   const frag = [h('h2', { class: 'page-title', text: '设置' })];
+  const U = await api('/api/usage').catch(() => null);
+  if (U) {
+    const tok = n => (n >= 1e4 ? (n / 1e4).toFixed(1) + ' 万' : String(n));
+    frag.push(h('div', { class: 'prov' }, h('h3', { text: '本月 AI 花费（' + U.month + '）' }),
+      h('div', { class: 'usage-total' }, h('b', { text: '¥' + U.total.toFixed(2) }), h('span', { class: 'hint', text: U.models.reduce((a, m) => a + m.calls, 0) + ' 次调用' })),
+      U.models.length ? h('div', {}, U.models.map(m => h('div', { class: 'usage-row' },
+        h('span', { class: 'grow', text: m.provider + ' · ' + m.model }),
+        h('span', { class: 'hint', text: m.calls + ' 次 · 输入 ' + tok(m.in) + ' · 输出 ' + tok(m.out) + ' tokens' }),
+        h('b', { text: m.unpriced === m.calls ? '未知' : '¥' + m.cost.toFixed(2) })))) : null,
+      h('p', { class: 'hint', text: '按官方标价估算：DeepSeek 工作日 9–12 点、14–18 点是高峰价（翻倍），其余时间半价；实际以服务商账单为准。本机 Whisper 转写不花钱。' })));
+  }
   const tp = h('select', { id: 'textProv', onchange: async e => { CFG = await post('/api/config', { text_provider: e.target.value }); STATUS = await api('/api/status'); } },
     ['deepseek', 'glm'].map(k => h('option', { value: k, selected: CFG.text_provider === k }, CFG.providers[k].label)));
   frag.push(h('div', { class: 'prov' }, h('h3', { text: '文字任务用哪个模型' }), h('label', {}, '讲解、点评、对话', tp)));
@@ -974,6 +1021,7 @@ async function renderSettings() {
     frag.push(h('div', { class: 'prov' },
       h('h3', {}, h('span', { class: p.has_key && p.model ? 'ok-dot' : 'no-dot' }), p.label),
       k === 'omni' ? h('p', { class: 'hint', text: '用来「听」你的录音、点评发音。在阿里云百炼开通后创建 API key；模型推荐 qwen3.8-omni-flash。接口地址如果报错，换成百炼控制台里你工作空间的地址。' }) : null,
+      k === 'deepseek' && p.model === 'deepseek-chat' ? h('p', { class: 'hint warn', text: 'DeepSeek 已经不提供 deepseek-chat 了。点「获取模型列表」，在模型里选 deepseek-flash，再点保存。' }) : null,
       k === 'glm' ? h('p', { class: 'hint', text: '模型名填你在智谱开放平台能用的那个（可以先保存 key，再点「获取模型列表」挑）。' }) : null,
       h('label', {}, '接口地址', url), h('label', {}, '模型', model, dl), h('label', {}, 'API key（只存在这台电脑的 config.json 里）', key),
       h('div', { class: 'row' },

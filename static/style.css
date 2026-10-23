@@ -180,6 +180,7 @@ audio { color-scheme: inherit; }
 .diff { font: 19px/1.7 var(--f-text); }
 .diff .hit { color: var(--good); }
 .diff .miss { color: var(--accent); text-decoration: underline wavy; text-underline-offset: 5px; text-decoration-thickness: 1px; }
+.diff .weak { color: var(--warn); text-decoration: underline dotted; text-underline-offset: 5px; text-decoration-thickness: 1.5px; cursor: help; }
 .diff .heard { display: block; font: 13px/1.5 var(--f-ui); color: var(--muted); margin-top: 6px; }
 .ai-note { background: var(--surface-2); border-radius: var(--r); padding: 12px 14px; display: grid; gap: 6px; font-size: 14px; }
 .script-bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
@@ -312,6 +313,10 @@ audio.native { width: 100%; height: 40px; }
 .prov input:not([type="range"]), .prov select { border: 0; border-radius: var(--r-sm); padding: 9px 12px; background: var(--surface-2); color: var(--ink); width: 100%; font-size: 14px; }
 .prov input:focus, .prov select:focus { outline: none; box-shadow: 0 0 0 2px var(--focus); }
 .prov input[type="range"] { accent-color: var(--ink); }
+.usage-row { display: flex; gap: 12px; align-items: baseline; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.usage-row b { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 4em; text-align: right; }
+.usage-total { display: flex; align-items: baseline; gap: 8px; }
+.usage-total b { font: 500 30px/1.1 var(--f-ui); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .ok-dot, .no-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 .ok-dot { background: var(--good); } .no-dot { background: var(--line); }
 .progress { height: 4px; background: var(--surface-2); border-radius: 2px; overflow: hidden; }

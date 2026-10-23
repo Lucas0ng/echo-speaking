@@ -38,7 +38,7 @@ DEFAULT_CFG = {
     "whisper_model": "mlx-community/whisper-large-v3-turbo",
     "text_provider": "deepseek",
     "providers": {
-        "deepseek": {"label": "DeepSeek", "base_url": "https://api.deepseek.com", "api_key": "", "model": "deepseek-chat"},
+        "deepseek": {"label": "DeepSeek", "base_url": "https://api.deepseek.com", "api_key": "", "model": "deepseek-flash"},
         "glm": {"label": "GLM（智谱）", "base_url": "https://open.bigmodel.cn/api/paas/v4", "api_key": "", "model": ""},
         "omni": {"label": "Qwen-Omni（百炼，听音频）", "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1", "api_key": "", "model": "qwen3.8-omni-flash"},
     },
@@ -243,8 +243,18 @@ def word_list(result: dict) -> list[list]:
     for seg in result.get("segments", []):
         for w in seg.get("words", []) or []:
             if w.get("word", "").strip():
-                out.append([w["word"].strip(), round(float(w["start"]), 2), round(float(w["end"]), 2)])
+                out.append([w["word"].strip(), round(float(w["start"]), 2), round(float(w["end"]), 2), round(float(w.get("probability", 1)), 2)])
     return out
+
+
+def speech_seconds(samples: np.ndarray) -> float:
+    """Seconds of 30 ms frames loud enough to be speech. Near-silent clips make Whisper invent "Thank you."."""
+    n = SR * 3 // 100
+    if len(samples) < n:
+        return 0.0
+    frames = samples[: len(samples) // n * n].reshape(-1, n)
+    rms = np.sqrt((frames ** 2).mean(axis=1))
+    return float((rms > 0.01).sum()) * 0.03
 
 
 def fluency(words: list[list]) -> dict:
@@ -253,7 +263,7 @@ def fluency(words: list[list]) -> dict:
     Speech rate counts words without fillers over the span from first to last word (pauses included).
     A run is a stretch of words not broken by a silent pause >= PAUSE or a filler.
     """
-    toks = [(re.sub(r"[^a-z0-9']", "", w.lower()), s, e) for w, s, e in words]
+    toks = [(re.sub(r"[^a-z0-9']", "", w[0].lower()), w[1], w[2]) for w in words]
     toks = [t for t in toks if t[0]]
     n_fill = sum(1 for t in toks if t[0] in FILLERS)
     real = len(toks) - n_fill
@@ -438,6 +448,40 @@ def enqueue(rel: str, front: bool = False):
     JOBS.put((0 if front else 1, _seq[0], rel))
 
 
+# ---------------------------------------------------------------- API usage & cost
+USAGE_PATH = DATA / "usage.jsonl"
+# 元 per 1M tokens: (input cache miss, input cache hit, output). Official list prices read 2026-10-23;
+# DeepSeek charges double in its peak hours (see is_deepseek_peak). Unknown models are logged without a cost.
+PRICES = {
+    "deepseek-flash": (1.0, 0.02, 4.0),
+    "deepseek-v4-pro": (4.5, 0.15, 13.5),
+    "qwen3.8-omni-flash": (0.8, 0.1, 2.7),
+}
+
+
+def is_deepseek_peak(t: float) -> bool:
+    """Beijing time Mon–Fri 9:00–12:00 and 14:00–18:00 (public holidays are ignored here)."""
+    bj = time.gmtime(t + 8 * 3600)
+    return bj.tm_wday < 5 and (9 <= bj.tm_hour < 12 or 14 <= bj.tm_hour < 18)
+
+
+def log_usage(p: dict, usage: dict | None) -> None:
+    if not usage:
+        return
+    now = time.time()
+    tin, tout = int(usage.get("prompt_tokens") or 0), int(usage.get("completion_tokens") or 0)
+    cached = int(usage.get("prompt_cache_hit_tokens") or (usage.get("prompt_tokens_details") or {}).get("cached_tokens") or 0)
+    price = PRICES.get(p.get("model", ""))
+    cost = None
+    if price:
+        k = 2 if p["model"].startswith("deepseek") and is_deepseek_peak(now) else 1
+        cost = round(((tin - cached) * price[0] + cached * price[1] + tout * price[2]) / 1e6 * k, 6)
+    row = {"t": int(now), "month": time.strftime("%Y-%m"), "provider": p.get("label", ""), "model": p.get("model", ""),
+           "in": tin, "cached": cached, "out": tout, "cost": cost}
+    with open(USAGE_PATH, "a", encoding="utf-8") as f:
+        f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
 # ---------------------------------------------------------------- LLM proxy
 def provider(name: str) -> dict:
     p = CFG["providers"].get(name)
@@ -470,7 +514,7 @@ async def chat_completion(p: dict, messages: list, want_json: bool, stream: bool
     body = {"model": p["model"], "messages": messages, "temperature": temperature}
     if stream:
         body["stream"] = True
-        body["stream_options"] = {"include_usage": False}
+        body["stream_options"] = {"include_usage": True}
     headers = {"Authorization": f"Bearer {p['api_key']}", "Content-Type": "application/json"}
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(120, connect=15)) as c:
@@ -478,8 +522,10 @@ async def chat_completion(p: dict, messages: list, want_json: bool, stream: bool
                 r = await c.post(url, json=body, headers=headers)
                 if r.status_code >= 400:
                     raise HTTPException(502, f"{p.get('label')} 返回错误 {r.status_code}：{r.text[:300]}")
-                return r.json()["choices"][0]["message"]["content"] or ""
-            parts = []
+                data = r.json()
+                log_usage(p, data.get("usage"))
+                return data["choices"][0]["message"]["content"] or ""
+            parts, usage = [], None
             async with c.stream("POST", url, json=body, headers=headers) as r:
                 if r.status_code >= 400:
                     txt = (await r.aread()).decode("utf-8", "ignore")
@@ -491,11 +537,14 @@ async def chat_completion(p: dict, messages: list, want_json: bool, stream: bool
                     if data == "[DONE]":
                         break
                     try:
-                        ch = json.loads(data)["choices"]
+                        chunk = json.loads(data)
+                        usage = chunk.get("usage") or usage
+                        ch = chunk.get("choices")
                         if ch and ch[0].get("delta", {}).get("content"):
                             parts.append(ch[0]["delta"]["content"])
                     except Exception:
                         continue
+            log_usage(p, usage)
             return "".join(parts)
     except httpx.HTTPError as e:
         raise HTTPException(502, f"连不上 {p.get('label')}：{e.__class__.__name__}。检查网络和接口地址。")
@@ -542,28 +591,32 @@ def api_transcribe_all():
 
 @app.post("/api/stt")
 async def api_stt(audio: UploadFile = File(...), ref: str = Form(""), kind: str = Form(""), line: str = Form("daily"), meta: str = Form("{}")):
-    """Speech to text. With `kind`, the recording is archived with word timestamps and fluency metrics."""
+    """Speech to text. With `kind`, the recording is archived with word timestamps and fluency metrics.
+
+    `ref` (the sentence the learner was meant to say) is deliberately NOT given to Whisper as a prompt:
+    with it, half-said words like "car" / "lang" come back as "career" / "language" and score 100%.
+    """
     mark_active()
     raw = await audio.read()
     try:
         samples = decode_audio(raw)
     except Exception:
         raise HTTPException(400, "这段录音解不开，再录一次试试。")
-    if len(samples) < SR * 0.3:
-        return {"text": ""}
+    if len(samples) < SR * 0.3 or speech_seconds(samples) < 0.25:
+        return {"text": "", "words": []}
     if kind and kind not in KINDS:
         raise HTTPException(400, "未知的录音类型")
-    prompt = ref[:200] or (FILLER_PROMPT if kind in CURVE_KINDS else None)
-    res = await run_blocking(lambda: whisper_run(samples, words=bool(kind), prompt=prompt))
+    prompt = FILLER_PROMPT if kind in CURVE_KINDS else None
+    res = await run_blocking(lambda: whisper_run(samples, words=True, prompt=prompt))
     text = " ".join(s["text"].strip() for s in res.get("segments", [])).strip()
     if not kind:
-        return {"text": text}
+        return {"text": text, "words": word_list(res)}
     try:
         m = json.loads(meta) if len(meta) < 4000 else {}
     except Exception:
         m = {}
     rec = save_recording(raw, audio.filename, samples, res, text, kind, "academic" if line == "academic" else "daily", m if isinstance(m, dict) else {})
-    return {"text": text, "id": rec["id"], "metrics": rec["metrics"], "duration": rec["duration"]}
+    return {"text": text, "words": rec["words"], "id": rec["id"], "metrics": rec["metrics"], "duration": rec["duration"]}
 
 
 @app.get("/api/recordings")
@@ -711,6 +764,30 @@ async def api_config_models(req: Request):
         return {"models": sorted(m.get("id") for m in r.json().get("data", []) if m.get("id"))}
     except httpx.HTTPError as e:
         raise HTTPException(502, f"连不上：{e.__class__.__name__}")
+
+
+@app.get("/api/usage")
+def api_usage():
+    """This month's AI calls, tokens and cost per model, from data/usage.jsonl."""
+    month, by = time.strftime("%Y-%m"), {}
+    if USAGE_PATH.exists():
+        for line in USAGE_PATH.read_text("utf-8").splitlines():
+            try:
+                r = json.loads(line)
+            except Exception:
+                continue
+            if r.get("month") != month:
+                continue
+            m = by.setdefault(r.get("model", ""), {"model": r.get("model", ""), "provider": r.get("provider", ""), "calls": 0, "in": 0, "out": 0, "cost": 0.0, "unpriced": 0})
+            m["calls"] += 1
+            m["in"] += r.get("in", 0)
+            m["out"] += r.get("out", 0)
+            if r.get("cost") is None:
+                m["unpriced"] += 1
+            else:
+                m["cost"] += r["cost"]
+    rows = sorted(by.values(), key=lambda m: -m["cost"])
+    return {"month": month, "models": rows, "total": round(sum(m["cost"] for m in rows), 4)}
 
 
 @app.get("/api/status")
