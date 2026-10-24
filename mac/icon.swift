@@ -1,5 +1,5 @@
 // 生成 1024×1024 的 App 图标 PNG：swift mac/icon.swift out.png
-// 墨绿圆角方块 + 米白声源圆点 + 两道回声弧（近的实、远的淡）。网页 favicon 是同一张图：static/icon.svg。
+// 陶土橙圆角方块 + 米白声源圆点 + 两道回声弧（近的实、远的淡）。网页 favicon 是同一张图：static/icon.svg。
 import AppKit
 
 let out = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "icon.png"
@@ -19,15 +19,15 @@ shadow.shadowBlurRadius = 28
 shadow.shadowOffset = NSSize(width: 0, height: -12)
 NSGraphicsContext.saveGraphicsState()
 shadow.set()
-rgb(0x14, 0x51, 0x4A).setFill()
+rgb(0xD9, 0x77, 0x57).setFill()
 shape.fill()
 NSGraphicsContext.restoreGraphicsState()
-NSGradient(starting: rgb(0x1A, 0x63, 0x5A), ending: rgb(0x10, 0x46, 0x40))!.draw(in: shape, angle: -90)
+NSGradient(starting: rgb(0xE0, 0x86, 0x66), ending: rgb(0xCC, 0x68, 0x48))!.draw(in: shape, angle: -90)
 
 // source dot + two echo arcs; drawn on the 96-unit grid of static/icon.svg (y flipped), scaled to the body
 let u = body.width / 88
 let P = { (x: CGFloat, y: CGFloat) in NSPoint(x: body.minX + (x - 4) * u, y: body.maxY - (y - 4) * u) }
-let cream = rgb(0xF4, 0xEF, 0xE6)
+let cream = rgb(0xFA, 0xF9, 0xF5)
 cream.setFill()
 let c = P(36, 48), r = 9 * u
 NSBezierPath(ovalIn: NSRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r)).fill()
