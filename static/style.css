@@ -208,6 +208,7 @@ audio.native { width: 100%; height: 40px; }
 .phrase { font: italic 400 44px/1.15 var(--f-text); letter-spacing: -.01em; }
 .phrase mark { background: linear-gradient(transparent 64%, var(--accent-soft) 64%); color: inherit; padding: 0 4px; }
 .card { display: grid; gap: 12px; }
+.mine-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
 .ex { display: grid; grid-template-columns: auto 1fr auto; gap: 2px 10px; align-items: start; padding: 12px 0; border-top: 1px solid var(--line); }
 .ex .en { font: 18px/1.5 var(--f-text); min-width: 0; }
 .ex .zh { grid-column: 2; font-size: 13px; color: var(--muted); }

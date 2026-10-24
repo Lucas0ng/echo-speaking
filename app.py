@@ -1062,11 +1062,12 @@ def api_transcribe_all():
 
 @app.get("/api/materials")
 def api_materials():
-    """The learner's own audio. Files dropped into the folder by hand are picked up here and queued for subtitles."""
+    """The learner's own audio. Files dropped into the folder by hand are picked up here and queued for subtitles,
+    ahead of the lesson backlog: the learner just added them and wants to practise them."""
     items = materials()
     for m in items:
         if m["status"] == "missing":
-            enqueue(m["f"])
+            enqueue(m["f"], front=True)
             m["status"] = JOB_STATE.get(m["f"], "missing")
     return {"dir": str(my_dir()), "items": items, "exts": sorted(AUDIO_EXT)}
 
@@ -1090,7 +1091,7 @@ async def api_materials_add(files: list[UploadFile] = File(...)):
         await run_blocking(copy)
         part.replace(dest)
         added.append(f"{MY_DIR}/{dest.name}")
-        enqueue(added[-1])
+        enqueue(added[-1], front=True)
     return {"added": added, **api_materials()}
 
 

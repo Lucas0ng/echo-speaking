@@ -220,6 +220,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
     a.beginSheetModal(for: window) { r in completionHandler(r == .alertFirstButtonReturn) }
   }
 
+  // <input type="file"> (importing audio, picking a photo): WKWebView shows no file panel without this
+  func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo,
+               completionHandler: @escaping ([URL]?) -> Void) {
+    let p = NSOpenPanel()
+    p.canChooseFiles = true
+    p.canChooseDirectories = false
+    p.allowsMultipleSelection = parameters.allowsMultipleSelection
+    p.beginSheetModal(for: window) { r in completionHandler(r == .OK ? p.urls : nil) }
+  }
+
   func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { webView.reload() }
 
   // ------------------------------------------------------------ menu

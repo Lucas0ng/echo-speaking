@@ -674,12 +674,12 @@ let TAB = 'today';
 function setTab(t) {
   togglePageHelp(false);
   if (t === 'log') t = 'progress';
-  if (!['today', 'retell', 'solo', 'chunks', 'errors', 'pron', 'chat', 'progress', 'settings', 'help'].includes(t)) t = 'today';
+  if (!['today', 'mine', 'retell', 'solo', 'chunks', 'errors', 'pron', 'chat', 'progress', 'settings', 'help'].includes(t)) t = 'today';
   if (TAB !== t) stopEverything();
   TAB = t;
   $$('.nav a').forEach(a => a.setAttribute('aria-selected', String(a.dataset.tab === t)));
   $$('main[data-view]').forEach(m => { m.hidden = m.dataset.view !== t; });
-  ({ today: renderToday, retell: renderRetell, solo: renderSolo, chunks: renderChunks, errors: renderErrors, pron: renderPron, chat: renderChat, progress: renderProgress, settings: renderSettings, help: renderHelp })[t]();
+  ({ today: renderToday, mine: renderMine, retell: renderRetell, solo: renderSolo, chunks: renderChunks, errors: renderErrors, pron: renderPron, chat: renderChat, progress: renderProgress, settings: renderSettings, help: renderHelp })[t]();
   if (location.hash !== '#' + t) history.replaceState(null, '', '#' + t);
   $('#pageHelp').hidden = t === 'help';
 }
@@ -954,6 +954,114 @@ function renderAudioReview(r) {
   return box;
 }
 function goLesson(n) { n = Math.max(1, Math.min(N, n)); stopEverything(); S.prefs.cur = n; if (!CHAT.started) CHAT.lesson = n; save(); renderHeader(); renderToday(); window.scrollTo({ top: 0 }); }
+
+/* ================= MY MATERIALS ================= */
+const MY = { items: null, dir: '', open: null, busy: false, err: '', tok: 0, timer: 0 };
+let MY_POLL = 0;
+async function loadMine() {
+  try {
+    const j = await api('/api/materials');
+    MY.items = j.items || []; MY.dir = j.dir || ''; MY.err = '';
+  } catch (e) {
+    MY.err = e.message; MY.items = MY.items || [];
+  }
+}
+function mineStatus(it) {
+  if (it.status === 'done') return h('span', { class: 'tag good', text: '字幕已生成' });
+  if (it.status === 'running') return h('span', { class: 'tag lamp', text: '正在生成字幕' });
+  if (it.status === 'queued' || it.status === 'missing') return h('span', { class: 'tag', text: '排队生成字幕' });
+  if (String(it.status).startsWith('error')) return h('span', { class: 'err', text: '字幕生成失败：' + it.status.replace(/^error:\s*/, '') });
+  return h('span', { class: 'tag', text: String(it.status) });
+}
+async function renderMine() {
+  const root = $('#view-mine'); if (root.hidden) return;
+  const tok = ++MY.tok;
+  if (MY.items === null) {
+    root.replaceChildren(h('p', { class: 'thinking', text: '读取中' }));
+    await loadMine();
+    if (tok === MY.tok) renderMine();
+    return;
+  }
+  const it = MY.open ? MY.items.find(x => x.f === MY.open) : null;
+  const frag = [];
+  if (it) {
+    const path = it.f;
+    frag.push(h('div', { class: 'row' }, h('button', { class: 'btn ghost', onclick: () => { stopEverything(); MY.open = null; renderMine(); } }, ic('left'), '全部素材')));
+    frag.push(h('h2', { class: 'page-title', text: it.t }));
+    let tr = TR.get(path)?.sentences ? TR.get(path) : await transcript(path).catch(e => ({ status: 'error', error: e.message }));
+    if (tok !== MY.tok || root.hidden) return;
+    if (tr.sentences) {
+      let sh = SHADOWS.get(path);
+      if (!sh) { sh = new Shadow(path, tr.sentences, { label: '我的素材：' + it.t }); SHADOWS.set(path, sh); }
+      frag.push(h('p', { class: 'intro', text: '选一句，先听原声，再跟读。录完自动用本地 Whisper 比对，标出没说清的词。' }));
+      frag.push(sh.view());
+      frag.push(h('div', { class: 'script-bar' },
+        h('span', {}, '速度'), seg([0.75, 0.85, 1], S.prefs.rate, v => { S.prefs.rate = v; save(); }),
+        h('label', { class: 'row' }, h('input', { type: 'checkbox', checked: S.prefs.focus !== false, onchange: e => { S.prefs.focus = e.target.checked; save(); sh.rerender(); } }), '每句一个练习重点'),
+        h('label', { class: 'row' }, h('input', { type: 'checkbox', checked: S.prefs.blind, onchange: e => { S.prefs.blind = e.target.checked; save(); sh.rerender(); } }), '盲跟：跟读前不显示原文'),
+        h('span', { class: 'grow' }), h('span', { class: 'mono', text: '已跟读 ' + sh.recs.size + ' / ' + sh.sents.length + ' 句' })));
+      const key = needKeyNote('omni'); if (key) frag.push(key);
+    } else {
+      frag.push(h('p', { class: 'thinking', id: 'myHint', text: String(tr.status).startsWith('error') ? '字幕生成失败：' + (tr.error || tr.status) : '正在用本地 Whisper 生成逐句字幕，长音频要几分钟。先听整段。' }));
+      frag.push(nativeAudio(path));
+      if (!String(tr.status).startsWith('error')) myPoll(path);
+    }
+  } else {
+    frag.push(h('h2', { class: 'page-title', text: '我的素材' }));
+    frag.push(h('p', { class: 'intro', text: '把自己的英语音频放进来练跟读：播客、课本录音、视频都行。本机 Whisper 会给每个文件生成逐句字幕，之后和每天的课一样逐句跟读、拆句型、点词查词。文件只存在你自己的电脑上。' }));
+    const file = h('input', { type: 'file', multiple: true, accept: '.mp3,.m4a,.aac,.wav,.flac,.ogg,.opus,.webm,.mp4,.mov,audio/*', style: 'display:none' });
+    file.onchange = async () => {
+      const files = [...file.files]; if (!files.length) return;
+      const fd = new FormData();
+      for (const f of files) fd.append('files', f, f.name);
+      MY.busy = true; renderMine();
+      try {
+        const j = await api('/api/materials', { method: 'POST', body: fd });
+        MY.items = j.items || []; MY.dir = j.dir || MY.dir; MY.err = ''; MY.busy = false;
+      } catch (e) {
+        MY.busy = false; alertBox(e.message);
+      }
+      file.value = '';
+      renderMine();
+    };
+    frag.push(h('div', { class: 'row' },
+      h('button', { class: 'btn primary', disabled: MY.busy, onclick: () => file.click() }, '导入音频…'),
+      MY.busy ? h('span', { class: 'thinking', text: '正在导入…' }) : null,
+      h('button', { class: 'btn ghost', onclick: async () => { try { await post('/api/materials/reveal', {}); } catch (e) { alertBox(e.message); } } }, '在访达中打开文件夹'),
+      h('button', { class: 'btn ghost', onclick: async () => { await loadMine(); renderMine(); } }, '刷新'),
+      file));
+    frag.push(h('p', { class: 'hint', text: '也可以直接把文件拖进这个文件夹，再点「刷新」：' + MY.dir }));
+    if (MY.err) frag.push(h('p', { class: 'err', text: MY.err }));
+    if (!MY.items.length) frag.push(h('p', { class: 'hint', text: '还没有素材。' }));
+    else {
+      frag.push(h('div', { class: 'section' },
+        h('h2', { text: '素材 · ' + MY.items.length }),
+        MY.items.map(it => h('div', { class: 'card mine-row row' },
+          h('div', { class: 'grow' }, h('b', { text: it.t }), h('div', { class: 'hint', text: (it.size / 1048576).toFixed(1) + ' MB · ' + ymd(new Date(it.added * 1000)) })),
+          mineStatus(it),
+          h('button', { class: 'btn', onclick: () => { MY.open = it.f; renderMine(); window.scrollTo({ top: 0 }); } }, '开始跟读')))));
+      if (MY.items.some(x => x.status !== 'done' && !String(x.status).startsWith('error'))) {
+        clearTimeout(MY.timer);
+        MY.timer = setTimeout(async () => {
+          if (TAB === 'mine' && !MY.open) { await loadMine(); renderMine(); }
+        }, 5000);
+      }
+    }
+  }
+  if (tok !== MY.tok || root.hidden) return;
+  root.replaceChildren(...frag);
+}
+function myPoll(path) {
+  clearTimeout(MY_POLL);
+  MY_POLL = setTimeout(async () => {
+    const j = await api('/api/transcript?path=' + encodeURIComponent(path)).catch(() => null);
+    if (j?.sentences) { TR.set(path, j); if (TAB === 'mine' && MY.open === path) renderMine(); return; }
+    if (TAB !== 'mine' || MY.open !== path) return;
+    const el = document.getElementById('myHint');
+    if (el && j) el.textContent = '正在用本地 Whisper 生成逐句字幕（前面还有 ' + (j.queue || 0) + ' 个），先听整段。';
+    myPoll(path);
+  }, 4000);
+}
 
 /* ================= WORD CARD (点词词典) ================= */
 let WPOP = null, WEL = null, WPTOK = 0;
