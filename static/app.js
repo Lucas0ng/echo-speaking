@@ -86,7 +86,7 @@ function lessonRec(n) { return S.lessons[n] || (S.lessons[n] = {}); }
 function markDay(flag) { const d = day(); if (flag === 'ch') d.ch = (d.ch || 0) + 1; else d[flag] = true; save(); renderHeader(); }
 function markLesson(n, step) {
   const L = lessonRec(n);
-  if (!L[step]) { L[step] = true; if (L.sh && L.ph && L.sp && !L.at) L.at = today(); }
+  if (!L[step]) { L[step] = true; if (lessonDone(n) && !L.at) L.at = today(); }
   markDay(step);
 }
 /* Undo a step marked done by mistake. The day's habit dot stays: something was still practised that day. */
@@ -94,7 +94,9 @@ function unmarkLesson(n, step) { const L = lessonRec(n); delete L[step]; delete 
 const DAY_FLAGS = ['sh', 'ph', 'sp', 'rv', 'rt', 'bl', 'er', 'pr', 'so'];
 const active = d => { const v = S.days[d]; return !!(v && (v.ch || DAY_FLAGS.some(k => v[k]))); };
 const level = d => { const v = S.days[d]; if (!v) return 0; return Math.min(3, DAY_FLAGS.filter(k => v[k]).length + (v.ch ? 1 : 0)); };
-const lessonsDone = () => Object.values(S.lessons).filter(l => l.sh && l.ph && l.sp).length;
+/* A lesson without a BBC phrase (feed not downloaded) is done after shadowing and speaking. */
+const lessonDone = n => { const r = S.lessons[n], L = LESSONS[n - 1]; return !!(r && r.sh && r.sp && (r.ph || (L && !L.b))); };
+const lessonsDone = () => Object.keys(S.lessons).filter(k => lessonDone(+k)).length;
 
 /* ================= text to speech ================= */
 let VOICES = [];
@@ -723,7 +725,7 @@ async function renderToday() {
   const myTok = ++RTOK;
   if (!N) { root.replaceChildren(...[guideCard(), h('p', { class: 'err', text: STATUS.lesson_error || '没有读到课程。检查设置里的资料文件夹。' })].filter(Boolean)); return; }
   const n = S.prefs.cur, L = LESSONS[n - 1], rec = lessonRec(n), st = lp(n);
-  if (!st.step) st.step = !rec.sh ? 1 : !rec.ph ? 2 : !rec.sp ? 3 : 1;
+  if (!st.step) st.step = !rec.sh ? 1 : !rec.ph && L.b ? 2 : !rec.sp ? 3 : 1;
   const frag = [];
   const gc = guideCard(); if (gc) frag.push(gc);
   const due = RECS.ok ? BASELINES.filter(baseDue) : [];
@@ -731,7 +733,7 @@ async function renderToday() {
     h('button', { class: 'btn', onclick: () => setTab('progress') }, '去录')));
 
   const sel = h('select', { 'aria-label': '选择课程', onchange: e => goLesson(+e.target.value) },
-    LESSONS.map((x, i) => { const r = S.lessons[i + 1]; return h('option', { value: i + 1, selected: i + 1 === n }, (r && r.sh && r.ph && r.sp ? '✓ ' : '') + (i + 1) + '. ' + x.t); }));
+    LESSONS.map((x, i) => { const r = S.lessons[i + 1]; return h('option', { value: i + 1, selected: i + 1 === n }, (lessonDone(i + 1) ? '✓ ' : '') + (i + 1) + '. ' + x.t); }));
   frag.push(h('header', { class: 'lesson-head' },
     h('div', { class: 'lesson-nav' },
       h('div', { class: 'row' },
@@ -739,9 +741,9 @@ async function renderToday() {
         h('span', { class: 'mono', text: '第 ' + n + ' 课，共 ' + N + ' 课' }),
         h('button', { class: 'btn ghost icon-btn', 'aria-label': '下一课', disabled: n >= N, onclick: () => goLesson(n + 1) }, ic('right'))), sel),
     h('h2', { class: 'lesson-title', text: L.t }),
-    h('div', { class: 'lesson-sub' }, h('span', { class: 'tag', text: '雅思口语 Part ' + L.p }), h('span', { class: 'tag lamp', text: '今日语块：' + L.x }))));
+    h('div', { class: 'lesson-sub' }, h('span', { class: 'tag', text: '雅思口语 Part ' + L.p }), L.x ? h('span', { class: 'tag lamp', text: '今日语块：' + L.x }) : null)));
 
-  const steps = [[1, '逐句跟读', 'IELTSCast，约 10 分钟', rec.sh], [2, '今日语块', 'BBC 原声，约 5 分钟', rec.ph], [3, '开口说', '自述并点评，约 3 分钟', rec.sp]];
+  const steps = [[1, '逐句跟读', 'IELTSCast，约 10 分钟', rec.sh], [2, '今日语块', L.b ? 'BBC 原声，约 5 分钟' : '这一课没有', rec.ph], [3, '开口说', '自述并点评，约 3 分钟', rec.sp]];
   frag.push(h('nav', { class: 'stepper', 'aria-label': '本课步骤' }, steps.map(([k, t, sub, done]) =>
     h('button', { class: done ? 'is-done' : '', 'aria-current': st.step === k ? 'step' : null, onclick: () => { st.step = k; stopEverything(); renderToday(); } },
       h('span', { class: 'n' }, done ? ic('check') : String(k)), h('b', { text: t }), h('small', { text: sub })))));
@@ -752,7 +754,7 @@ async function renderToday() {
   else buildStep3(panel, n, L, rec, st);
   frag.push(panel);
 
-  if (rec.sh && rec.ph && rec.sp) frag.push(h('div', { class: 'next-cta' }, h('span', { text: '第 ' + n + ' 课完成了。' }),
+  if (lessonDone(n)) frag.push(h('div', { class: 'next-cta' }, h('span', { text: '第 ' + n + ' 课完成了。' }),
     h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => startChatOn(n) }, '用这个话题和 AI 聊聊'), n < N ? h('button', { class: 'btn primary', onclick: () => goLesson(n + 1) }, '下一课') : null)));
 
   if (myTok !== RTOK || $('#view-today').hidden || S.prefs.cur !== n) return;
@@ -796,6 +798,11 @@ async function buildStep1(panel, n, L, rec) {
   panel.append(nextStepButton(n, 1, rec, 'sh', '标记跟读完成'));
 }
 async function buildStep2(panel, n, L, rec, st) {
+  if (!L.b) {
+    panel.append(h('p', { class: 'intro', text: '这一课没有配 BBC 语块：BBC 的音频没下载到（在国内一般要开代理才能下）。这一步跳过，直接开口说。' }),
+      h('div', { class: 'panel-foot' }, h('span', { class: 'grow' }), h('button', { class: 'btn primary', onclick: () => { st.step = 3; stopEverything(); renderToday(); window.scrollTo({ top: 0 }); } }, '下一步', ic('right'))));
+    return;
+  }
   const card = S.cards[n];
   panel.append(
     h('div', { class: 'phrase-hero' }, h('div', { class: 'phrase grow' }, h('mark', { text: L.x })), sayBtn(L.x, '朗读语块'), chunkBtn(L.x, card?.meaning_zh || '', 'BBC The English We Speak')),

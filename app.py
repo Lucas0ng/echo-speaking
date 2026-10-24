@@ -14,6 +14,7 @@ import os
 import queue
 import re
 import secrets
+import shutil
 import sqlite3
 import threading
 import time
@@ -103,7 +104,8 @@ def _rows(p: Path) -> list[dict]:
 def build_lessons() -> list[dict]:
     md = media_dir()
     ie = _rows(md / IE_DIR / "manifest.csv")
-    bb = _rows(md / BB_DIR / "manifest.csv")
+    bb_manifest = md / BB_DIR / "manifest.csv"
+    bb = _rows(bb_manifest) if bb_manifest.exists() else []  # the BBC feed is often unreachable from mainland China
     lessons = []
     for r in sorted(ie, key=lambda r: r["date"]):
         t = r["title"]
@@ -141,7 +143,7 @@ try:
     LESSONS = build_lessons()
     LESSON_ERR = ""
 except Exception as e:  # media folder missing
-    LESSONS, LESSON_ERR = [], f"读不到课程音频（{e}）。先双击项目文件夹里的「下载课程.command」，下载完退出回声再打开。"
+    LESSONS, LESSON_ERR = [], f"读不到课程音频（{e}）。先双击项目文件夹里的「下载课程.command」，下载完退出回声再打开。也可以先在「我的素材」里用自己的音频练跟读。"
 
 
 def safe_media(rel: str) -> Path:
@@ -180,13 +182,14 @@ MEDIA_LOCKS: dict[str, threading.Lock] = {}
 
 
 def seekable_media(p: Path) -> Path:
-    """An AAC copy of a lesson MP3, made once and cached in data/media/.
+    """An AAC copy of a lesson MP3 or an imported file, made once and cached in data/media/.
 
     The lessons are VBR MP3s. WebKit (the Mac app's window) seeks in those by estimate and lands seconds away
     from the Whisper timestamps, more the later in the episode; AAC in MP4 has a frame index and seeks exactly
-    (constant +21 ms encoder delay).
+    (constant +21 ms encoder delay). Imported WAV, FLAC, Ogg or video files are converted the same way so that
+    every format plays, and seeks, in WebKit.
     """
-    if p.suffix.lower() != ".mp3":
+    if p.suffix.lower() == ".m4a":
         return p
     import av
 
@@ -715,6 +718,40 @@ def enqueue(rel: str, front: bool = False):
     JOBS.put((0 if front else 1, _seq[0], rel))
 
 
+# ---------------------------------------------------------------- the learner's own audio
+MY_DIR = "我的素材"
+AUDIO_EXT = {".mp3", ".m4a", ".aac", ".wav", ".flac", ".ogg", ".opus", ".webm", ".mp4", ".mov"}
+_BAD_NAME = re.compile(r'[\x00-\x1f\x7f/\\:*?"<>|]')
+
+
+def my_dir() -> Path:
+    return media_dir() / MY_DIR
+
+
+def materials() -> list[dict]:
+    """Audio files in <media_dir>/我的素材/, newest first. Not lessons: they have no number, phrase or progress flags."""
+    d = my_dir()
+    if not d.is_dir():
+        return []
+    out = []
+    for p in d.iterdir():
+        if not p.is_file() or p.name.startswith(".") or p.suffix.lower() not in AUDIO_EXT:
+            continue
+        rel = f"{MY_DIR}/{p.name}"
+        st = p.stat()
+        out.append({"f": rel, "t": re.sub(r"[\s_]+", " ", p.stem).strip() or p.stem, "size": st.st_size, "added": st.st_mtime,
+                    "status": "done" if tpath(rel).exists() else JOB_STATE.get(rel, "missing")})
+    return sorted(out, key=lambda m: -m["added"])
+
+
+def free_name(d: Path, name: str) -> Path:
+    stem, ext = os.path.splitext(_BAD_NAME.sub("_", Path(name).name).strip(" ."))
+    p, i = d / f"{stem or 'audio'}{ext.lower()}", 2
+    while p.exists():
+        p, i = d / f"{stem or 'audio'} ({i}){ext.lower()}", i + 1
+    return p
+
+
 # ---------------------------------------------------------------- API usage & cost
 USAGE_PATH = DATA / "usage.jsonl"
 # 元 per 1M tokens: (input cache miss, input cache hit, output). Official list prices read 2026-10-23;
@@ -991,7 +1028,7 @@ def api_lessons():
 @app.get("/api/media")
 def api_media(path: str):
     p = seekable_media(safe_media(path))
-    return FileResponse(p, media_type="audio/mp4" if p.suffix == ".m4a" else "audio/mpeg")
+    return FileResponse(p, media_type="audio/mp4")  # seekable_media always hands back an .m4a
 
 
 @app.get("/api/transcript")
@@ -1016,7 +1053,60 @@ def api_transcribe_all():
             if l.get(k) and not tpath(l[k]).exists():
                 enqueue(l[k])
                 n += 1
+    for m in materials():
+        if m["status"] == "missing":
+            enqueue(m["f"])
+            n += 1
     return {"queued": n}
+
+
+@app.get("/api/materials")
+def api_materials():
+    """The learner's own audio. Files dropped into the folder by hand are picked up here and queued for subtitles."""
+    items = materials()
+    for m in items:
+        if m["status"] == "missing":
+            enqueue(m["f"])
+            m["status"] = JOB_STATE.get(m["f"], "missing")
+    return {"dir": str(my_dir()), "items": items, "exts": sorted(AUDIO_EXT)}
+
+
+@app.post("/api/materials")
+async def api_materials_add(files: list[UploadFile] = File(...)):
+    bad = [f.filename for f in files if Path(f.filename or "").suffix.lower() not in AUDIO_EXT]
+    if bad:
+        raise HTTPException(400, "这些文件不是支持的音频格式：" + "、".join(bad) + "。支持 mp3、m4a、wav、flac、ogg、mp4 等。")
+    d = my_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    added = []
+    for f in files:
+        dest = free_name(d, f.filename)
+        part = dest.with_name(dest.name + ".part")
+
+        def copy(src=f.file, part=part):
+            with open(part, "wb") as out:
+                shutil.copyfileobj(src, out, 1 << 20)
+
+        await run_blocking(copy)
+        part.replace(dest)
+        added.append(f"{MY_DIR}/{dest.name}")
+        enqueue(added[-1])
+    return {"added": added, **api_materials()}
+
+
+@app.post("/api/materials/reveal")
+def api_materials_reveal():
+    """Opens the folder in Finder (Explorer on Windows) so files can be dragged in."""
+    import subprocess
+    import sys
+
+    d = my_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    if sys.platform == "win32":
+        os.startfile(d)  # type: ignore[attr-defined]
+    else:
+        subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", str(d)])
+    return {"dir": str(d)}
 
 
 @app.post("/api/stt")
