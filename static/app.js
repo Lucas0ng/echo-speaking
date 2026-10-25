@@ -674,17 +674,14 @@ function pollLater(path) {
 
 /* ================= header & tabs ================= */
 function renderHeader() {
-  // This calendar week, Monday first: it starts over every week, so a missed day is never a broken chain.
-  const wk = $('#weekDots'); wk.replaceChildren(); let nWk = 0;
+  // Words only, no row of dots to fill: this calendar week (Monday first) and what was done last time.
   const mon = new Date(); mon.setDate(mon.getDate() - (mon.getDay() + 6) % 7);
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(mon); d.setDate(mon.getDate() + i); const k = ymd(d);
-    nWk += active(k); wk.append(h('i', { class: (active(k) ? 'on' : '') + (k === today() ? ' today' : k > today() ? ' future' : ''), title: k }));
-  }
+  let nWk = 0; for (let i = 0; i < 7; i++) { const d = new Date(mon); d.setDate(mon.getDate() + i); nWk += active(ymd(d)); }
   const last = lastActiveDay();
   $('#habitLine').textContent = active(today()) ? '今天开过口了 · 本周练了 ' + nWk + ' 天'
     : (nWk ? '本周练了 ' + nWk + ' 天' : '这周还没开始') + (last ? ' · 上次是' + relDay(last) + '：' + dayWhat(last) : '');
-  $('#subline').textContent = '已完成 ' + lessonsDone() + ' / ' + N + ' 课';
+  // Where you are, not how far is left; lessons completed are on the progress page.
+  $('#subline').textContent = N ? '第 ' + S.prefs.cur + ' 课 · 共 ' + N + ' 课' : '';
   if (STATUS.lessons) $('#railFoot').textContent = STATUS.ielts_transcribed >= STATUS.lessons ? '全部字幕已就绪' : '本地字幕 ' + STATUS.ielts_transcribed + ' / ' + STATUS.lessons + ' 集，空闲时在后台生成';
 }
 let TAB = 'today';
