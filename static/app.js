@@ -71,7 +71,7 @@ async function stt(blob, ref = '', arch = null) { return (await sttFull(blob, re
 const LEARNER = "The learner is a Chinese graduate student (master's level, roughly IELTS 5.5–6.5 speaking) practising spoken English. Explanations for the learner are in simplified Chinese; English examples are natural, spoken and modern.";
 
 /* ================= state ================= */
-const S = { days: {}, lessons: {}, srs: {}, cards: {}, errs: {}, pron: { tests: [], drills: {} }, shadow: {}, prefs: { cur: 1, voice: '', ttsRate: 0.95, autoSpeak: true, level: 'normal', rate: 1, blind: false } };
+const S = { days: {}, lessons: {}, srs: {}, cards: {}, errs: {}, pron: { tests: [], drills: {} }, shadow: {}, repairs: [], prefs: { cur: 1, voice: '', ttsRate: 0.95, autoSpeak: true, level: 'normal', rate: 1, blind: false } };
 let LESSONS = [], N = 0, STATUS = {}, CFG = null;
 /* Nothing is saved until the stored progress has loaded: saving the empty starting state would wipe it. */
 let saveT, stateLoaded = false, saveWarned = false;
@@ -84,13 +84,15 @@ function save() {
 function day(d = today()) { return S.days[d] || (S.days[d] = {}); }
 function lessonRec(n) { return S.lessons[n] || (S.lessons[n] = {}); }
 function markDay(flag) { const d = day(); if (flag === 'ch') d.ch = (d.ch || 0) + 1; else d[flag] = true; save(); renderHeader(); }
+/* Only speaking marks a step done: shadowing 5 sentences, saying the chunk sentence, or talking on the topic. */
 function markLesson(n, step) {
   const L = lessonRec(n);
+  if (L.skip) delete L.skip[step];
   if (!L[step]) { L[step] = true; if (lessonDone(n) && !L.at) L.at = today(); }
   markDay(step);
 }
-/* Undo a step marked done by mistake. The day's habit dot stays: something was still practised that day. */
-function unmarkLesson(n, step) { const L = lessonRec(n); delete L[step]; delete L.at; save(); renderHeader(); }
+/* Moving on without speaking is a skip, kept apart from done: it never counts towards the lesson or the habit dots. */
+function skipLesson(n, step) { const L = lessonRec(n); if (!L[step]) { (L.skip ||= {})[step] = today(); save(); } }
 const DAY_FLAGS = ['sh', 'ph', 'sp', 'rv', 'rt', 'bl', 'er', 'pr', 'so'];
 const active = d => { const v = S.days[d]; return !!(v && (v.ch || DAY_FLAGS.some(k => v[k]))); };
 const level = d => { const v = S.days[d]; if (!v) return 0; return Math.min(3, DAY_FLAGS.filter(k => v[k]).length + (v.ch ? 1 : 0)); };
@@ -743,10 +745,10 @@ async function renderToday() {
     h('h2', { class: 'lesson-title', text: L.t }),
     h('div', { class: 'lesson-sub' }, h('span', { class: 'tag', text: '雅思口语 Part ' + L.p }), L.x ? h('span', { class: 'tag lamp', text: '今日语块：' + L.x }) : null)));
 
-  const steps = [[1, '逐句跟读', 'IELTSCast，约 10 分钟', rec.sh], [2, '今日语块', L.b ? 'BBC 原声，约 5 分钟' : '这一课没有', rec.ph], [3, '开口说', '自述并点评，约 3 分钟', rec.sp]];
-  frag.push(h('nav', { class: 'stepper', 'aria-label': '本课步骤' }, steps.map(([k, t, sub, done]) =>
-    h('button', { class: done ? 'is-done' : '', 'aria-current': st.step === k ? 'step' : null, onclick: () => { st.step = k; stopEverything(); renderToday(); } },
-      h('span', { class: 'n' }, done ? ic('check') : String(k)), h('b', { text: t }), h('small', { text: sub })))));
+  const steps = [[1, '逐句跟读', 'IELTSCast，约 10 分钟', 'sh'], [2, '今日语块', L.b ? 'BBC 原声，约 5 分钟' : '这一课没有', 'ph'], [3, '开口说', '自述并点评，约 3 分钟', 'sp']];
+  frag.push(h('nav', { class: 'stepper', 'aria-label': '本课步骤' }, steps.map(([k, t, sub, flag]) =>
+    h('button', { class: rec[flag] ? 'is-done' : '', 'aria-current': st.step === k ? 'step' : null, onclick: () => { st.step = k; stopEverything(); renderToday(); } },
+      h('span', { class: 'n' }, rec[flag] ? ic('check') : String(k)), h('b', { text: t }), h('small', { text: !rec[flag] && rec.skip?.[flag] ? '跳过了' : sub })))));
 
   const panel = h('section', { class: 'panel' });
   if (st.step === 1) await buildStep1(panel, n, L, rec);
@@ -760,12 +762,12 @@ async function renderToday() {
   if (myTok !== RTOK || $('#view-today').hidden || S.prefs.cur !== n) return;
   const y = window.scrollY; root.replaceChildren(...frag); window.scrollTo(0, y);
 }
-function nextStepButton(n, k, rec, flag, label) {
-  const st = lp(n);
+function nextStepButton(n, k, rec, flag, how) {
+  const st = lp(n), done = rec[flag];
   return h('div', { class: 'panel-foot' },
-    rec[flag] ? h('span', { class: 'row' }, h('span', { class: 'tag good', text: '这一步已完成' }), h('button', { class: 'btn ghost small', title: '点错了可以撤销', onclick: () => { unmarkLesson(n, flag); renderToday(); } }, '撤销')) : h('button', { class: 'btn ghost', onclick: () => { markLesson(n, flag); renderToday(); } }, label),
+    done ? h('span', { class: 'tag good', text: '这一步已完成' }) : h('span', { class: 'hint', text: how }),
     h('span', { class: 'grow' }),
-    k < 3 ? h('button', { class: 'btn primary', onclick: () => { st.step = k + 1; stopEverything(); renderToday(); window.scrollTo({ top: 0 }); } }, '下一步', ic('right')) :
+    k < 3 ? h('button', { class: 'btn ' + (done ? 'primary' : 'ghost'), onclick: () => { if (!done) skipLesson(n, flag); st.step = k + 1; stopEverything(); renderToday(); window.scrollTo({ top: 0 }); } }, done ? '下一步' : '先跳过', ic('right')) :
       h('button', { class: 'btn', onclick: () => startChatOn(n) }, '用这个话题和 AI 对话'));
 }
 async function buildStep1(panel, n, L, rec) {
@@ -795,7 +797,7 @@ async function buildStep1(panel, n, L, rec) {
     panel.append(h('p', { class: 'thinking', id: 'trHint-' + L.f, text: String(tr.status).startsWith('error') ? '字幕生成失败：' + (tr.error || tr.status) : '正在用本地 Whisper 给这一集生成逐句字幕，大约一两分钟。先听整集。' }), nativeAudio(L.f));
     pollLater(L.f);
   }
-  panel.append(nextStepButton(n, 1, rec, 'sh', '标记跟读完成'));
+  panel.append(nextStepButton(n, 1, rec, 'sh', '跟读满 5 句，这一步自动完成。'));
 }
 async function buildStep2(panel, n, L, rec, st) {
   if (!L.b) {
@@ -845,15 +847,22 @@ async function buildStep2(panel, n, L, rec, st) {
     try {
       const r = await aiText(LEARNER + '\n\nThe learner tried to use the chunk "' + L.x + '"' + (card ? ' (meaning: ' + card.meaning_zh + ')' : '') + ' in this sentence (from speech-to-text; ignore punctuation):\n"' + s + '"\nJSON: {"ok": true or false, "better": "a corrected, more natural version that still uses the chunk", "note_zh": "中文点评，一两句"}', { think: false });
       st.check = { ok: !!r.ok, better: String(r.better || ''), note: String(r.note_zh || '') };
-      markLesson(n, 'ph'); renderToday();
+      renderToday();
     } catch (e) { cb.disabled = false; chk.replaceChildren(h('p', { class: 'err', text: e.message })); }
   } }, '检查这句');
   if (st.check) chk.append(h('div', { class: 'result' },
     h('div', { class: 'row' }, h('span', { class: 'tag ' + (st.check.ok ? 'good' : 'lamp'), text: st.check.ok ? '用对了' : '可以更好' }), h('span', { text: st.check.note })),
     st.check.better ? h('div', { class: 'say' }, h('p', { text: st.check.better }), sayBtn(st.check.better), chunkBtn(st.check.better, '', '造句：' + L.x)) : null));
   panel.append(h('h3', { class: 'sub-h', text: '轮到你' }), ta, h('div', { class: 'row' },
-    micButton('ph' + n, async blob => { try { const t = await stt(blob, L.x, { kind: 'chunk', meta: { lesson: n, ref: L.x } }); st.sentence = (st.sentence ? st.sentence + ' ' : '') + t; } catch (e) { alertBox(e.message); } renderToday(); }),
-    cb), chk, nextStepButton(n, 2, rec, 'ph', '跳过检查，标记完成'));
+    micButton('ph' + n, async blob => {
+      try {
+        const j = await sttFull(blob, L.x, { kind: 'chunk', meta: { lesson: n, ref: L.x } });
+        st.sentence = (st.sentence ? st.sentence + ' ' : '') + j.text;
+        if (spoke(j, PH_MIN_WORDS)) markLesson(n, 'ph');
+      } catch (e) { alertBox(e.message); }
+      renderToday();
+    }),
+    cb), chk, nextStepButton(n, 2, rec, 'ph', '用这个语块说出一句话，这一步就完成；打字不算。'));
 }
 function buildStep3(panel, n, L, rec, st) {
   const dur = L.p === 2 ? 120 : 60, prompt = promptText(L);
@@ -874,23 +883,23 @@ function buildStep3(panel, n, L, rec, st) {
     const s = ta2.value.trim(); if (s.split(/\s+/).length < 8) { alertBox('再多说几句（至少 8 个词）再点评。'); return; }
     st.busy.review = true; renderToday();
     try {
-      st.review = await aiText(LEARNER + '\n\nIELTS-style speaking task (Part ' + L.p + '): "' + prompt + '"\nTarget chunk for today: "' + L.x + '".\nSpeech-to-text transcript of the learner (ignore punctuation and obvious mis-hearings):\n---\n' + s.slice(0, 6000) + '\n---\nJSON: {"comment_zh": "中文两句：做得好的一点 + 最该改的一点", "band": "rough IELTS speaking band, e.g. \\"6.0\\"", "corrected": "their answer with grammar and word choice fixed, same meaning", "natural": "a more fluent, natural version, about the same length", "fixes": [{"original": "...", "better": "...", "why_zh": "中文一句"}], "chunks": [{"en": "a useful multi-word chunk for this topic", "zh": "..."}], "used_target": true or false}. At most 5 fixes. Exactly 4 chunks (multi-word expressions, not single words).' + gapPromptPart(st.stuck) + errPromptPart());
+      st.review = await aiText(LEARNER + '\n\nIELTS-style speaking task (Part ' + L.p + '): "' + prompt + '"\nTarget chunk for today: "' + L.x + '".\nSpeech-to-text transcript of the learner (ignore punctuation and obvious mis-hearings):\n---\n' + s.slice(0, 6000) + '\n---\nNo band score or rating of any kind.\nJSON: {"comment_zh": "中文两句：做得好的一点 + 最该改的一点", "corrected": "their answer with grammar and word choice fixed, same meaning", "natural": "a more fluent, natural version, about the same length", "fixes": [{"original": "the learner\'s exact words", "better": "...", "why_zh": "中文一句", "hint_zh": "first fix only"}], "chunks": [{"en": "a useful multi-word chunk for this topic", "zh": "..."}], "used_target": true or false}. 1–3 fixes, the one that most hurts understanding first. '
+        + 'The first fix also gets "hint_zh": a short Chinese hint that points at the problem WITHOUT giving the answer (e.g. "时态？" or "这个动词换一个更常用的？"); the learner will try to fix it themselves before seeing the rest. comment_zh must not give that answer away either. Exactly 4 chunks (multi-word expressions, not single words).' + gapPromptPart(st.stuck) + errPromptPart());
       if (st.review) { st.review.errKeys = errIngest(st.review.errors, '开口说 · ' + L.t); st.review.cards = gapIngest(st.review.gaps, '卡壳', '开口说 · ' + L.t); updateBadge(); }
-      markLesson(n, 'sp');
     } catch (e) { alertBox(e.message); }
     st.busy.review = false; renderToday();
   } }, st.busy.review ? 'AI 点评中' : '点评内容');
   const ab = h('button', { class: 'btn', disabled: !st.blob || !!st.busy.audio, onclick: async () => {
     st.busy.audio = true; renderToday();
     try {
-      st.audioReview = await aiAudio(st.blob, LEARNER + '\n\nThe audio is the learner answering this IELTS speaking question: "' + prompt + '". Listen to HOW they speak, not only what they say. Assess like an IELTS examiner: fluency and coherence, pronunciation (individual sounds, word stress, sentence stress, intonation, chunking), and how natural they sound.\nJSON: {"band_pron": "pronunciation band e.g. \\"6.0\\"", "band_fluency": "fluency band", "summary_zh": "中文两三句总评", "pron_issues": [{"word": "word or phrase as heard", "problem_zh": "...", "tip_zh": "..."}], "fluency_tips_zh": ["..."]}. At most 4 pron_issues and 3 fluency tips.');
-      markLesson(n, 'sp');
+      st.audioReview = await aiAudio(st.blob, LEARNER + '\n\nThe audio is the learner answering this IELTS speaking question: "' + prompt + '". Listen to HOW they speak, not only what they say: fluency, pronunciation (individual sounds, word stress, sentence stress, intonation, chunking), and how natural they sound. Focus on what would make them easier to understand. No band score or rating of any kind.\nJSON: {"summary_zh": "中文两三句总评", "pron_issues": [{"word": "word or phrase as heard", "problem_zh": "...", "tip_zh": "..."}], "fluency_tips_zh": ["..."]}. At most 4 pron_issues and 3 fluency tips.');
     } catch (e) { alertBox(e.message); }
     st.busy.audio = false; renderToday();
   } }, st.busy.audio ? 'AI 在听' : '听发音和流利度');
   put(panel, h('div', { class: 'row' }, rb, ab), needKeyNote('text'));
   if (st.audioReview) panel.append(renderAudioReview(st.audioReview));
-  if (st.review) {
+  if (st.review && !repairDone(st.review)) panel.append(repairCard(n, L, st));
+  else if (st.review) {
     const anaBtn = h('button', { class: 'btn', disabled: !!st.busy.ana, onclick: async () => {
       const list = splitSentences(st.talk);
       if (!list.length) { alertBox('没有可分析的完整句子。'); return; }
@@ -907,8 +916,10 @@ function buildStep3(panel, n, L, rec, st) {
     if (st.ana) for (const x of st.ana) panel.append(analysisView(x, { mine: true, src: '开口说 · ' + L.t }));
     put(panel, renderReview(st.review, L), gapNotice(st.review.cards));
   }
-  panel.append(nextStepButton(n, 3, rec, 'sp', '只说不点评，标记完成'));
+  panel.append(nextStepButton(n, 3, rec, 'sp', '开口说满 ' + SP_MIN_WORDS + ' 个词，这一步就完成；点评可做可不做。'));
 }
+const PH_MIN_WORDS = 4, SP_MIN_WORDS = 15; // spoken words that count as having done step 2 / step 3
+const spoke = (j, min) => !j.metrics?.garbled && wordsOf(j.text).length >= min; // a Whisper loop on noise is not speaking
 const SPT = { elapsed: 0, iv: null };
 async function speakRec(n, dur) {
   const owner = 'sp' + n, st = lp(n);
@@ -924,6 +935,7 @@ async function speakRec(n, dur) {
   try {
     const L = LESSONS[n - 1], j = await sttFull(blob, '', { kind: 'talk', meta: { lesson: n, topic: L.t, prompt: promptText(L) } });
     st.talk = j.text; st.metrics = j.metrics; st.stuck = j.stuck || [];
+    if (spoke(j, SP_MIN_WORDS)) markLesson(n, 'sp');
   } catch (e) { alertBox(e.message); }
   st.busy.stt = false; renderToday();
 }
@@ -934,20 +946,69 @@ function renderCard(box, c, L) {
   for (const e of c.examples || []) list.append(h('div', { class: 'ex' }, sayBtn(e.en), h('span', { class: 'en' }, wordify(e.en, { src: '例句 · ' + L.x })), chunkBtn(e.en, e.zh, '例句 · ' + L.x), h('span', { class: 'zh', text: e.zh })));
   box.append(list);
 }
+/* Self-repair before the feedback: a hint for the most important fix, and the learner says that part again.
+   The rest of the review stays hidden until they fix it, or give up, see the answer and say it once. */
+const REPAIR_TRIES = 2;
+const repairDone = r => !r.fixes?.[0]?.original || ['fixed', 'said'].includes(r.repair?.state);
+const wordsOf = s => String(s || '').toLowerCase().replace(/[^a-z' ]/g, ' ').split(/\s+/).filter(Boolean);
+function saysAll(target, said, need) { const got = new Set(wordsOf(said)), want = wordsOf(target); return want.length > 0 && want.filter(w => got.has(w)).length / want.length >= need; }
+async function repairJudge(f, said) {
+  if (saysAll(f.better, said, 1)) return { ok: true, note: '' };
+  const r = await aiText(LEARNER + '\n\nIn their answer the learner said: "' + f.original + '". A better version: "' + f.better + '" (' + (f.why_zh || '') + ').\nThey got a hint and tried again. Speech-to-text of the new attempt (ignore punctuation):\n"' + said + '"\n'
+    + 'Did they fix that problem? Any correct, natural fix counts; it need not match the better version. Ignore problems elsewhere.\nJSON: {"ok": true or false, "note_zh": "中文一句。没改对时只再提示一下，不要说出答案"}', { think: false });
+  return { ok: !!r?.ok, note: String(r?.note_zh || '') };
+}
+function repairEnd(R, f, L, state) {
+  R.state = state;
+  (S.repairs ||= []).push({ t: Date.now(), src: '开口说 · ' + L.t, original: String(f.original), better: String(f.better || ''), said: R.heard, fixed: state === 'fixed', tries: R.tries });
+  if (S.repairs.length > 500) S.repairs.splice(0, S.repairs.length - 500);
+  save();
+}
+function repairCard(n, L, st) {
+  const f = st.review.fixes[0], R = st.review.repair || (st.review.repair = { state: 'open', tries: 0, heard: '', note: '', busy: false });
+  const open = R.state === 'open';
+  const mb = micButton('rp' + n, async blob => {
+    R.busy = true; R.note = ''; renderToday();
+    try {
+      const j = await sttFull(blob, '', { kind: 'review', meta: { ref: f.better, mode: 'repair', lesson: n } });
+      R.heard = j.text;
+      if (!spoke(j, 1)) R.note = '没听清，再说一遍。';
+      else if (R.state === 'open') {
+        const v = await repairJudge(f, j.text); R.tries++;
+        if (v.ok) repairEnd(R, f, L, 'fixed');
+        else { R.note = v.note || '还没改对，再看看提示。'; if (R.tries >= REPAIR_TRIES) { R.state = 'revealed'; R.heard = ''; } }
+      } else if (saysAll(f.better, j.text, 0.8)) repairEnd(R, f, L, 'said');
+      else R.note = '没听全，对着正确说法再说一遍。';
+    } catch (e) { R.note = e.message; }
+    R.busy = false; renderToday();
+  }, ['说', '说完了']);
+  mb.disabled = R.busy;
+  const box = h('div', { class: 'result' }, h('h3', { text: '先自己改一处，再看点评' }),
+    h('div', { class: 'fix' }, h('span', { class: 'hint', text: '你刚才说' }), h('s', { text: esc(f.original) })));
+  if (open) put(box, h('p', {}, h('span', { class: 'tag lamp', text: '提示' }), ' ', esc(f.hint_zh || '这里有个地方不对或不自然。')),
+    h('p', { class: 'hint', text: '想一想怎么改，把这部分改好后说出来。' }));
+  else put(box, h('p', { class: 'hint', text: '正确说法在这里。跟着说一遍，就能看点评了。' }),
+    h('div', { class: 'say' }, h('p', { text: esc(f.better) }), sayBtn(esc(f.better))), f.why_zh ? h('p', { class: 'hint', text: esc(f.why_zh) }) : null);
+  put(box, h('div', { class: 'row' }, mb, open && R.tries > 0 && !R.busy ? h('button', { class: 'btn ghost', onclick: () => { R.state = 'revealed'; R.note = ''; R.heard = ''; renderToday(); } }, '说不出来，看答案') : null),
+    R.busy ? h('p', { class: 'thinking', text: '识别并判断中' }) : null,
+    R.heard && !R.busy ? h('p', { class: 'hint', text: '听到的是：' + R.heard }) : null,
+    R.note && !R.busy ? h('p', { class: 'err', text: R.note }) : null);
+  return box;
+}
 function renderReview(r, L) {
   const box = h('div', { class: 'result' }, h('h3', { text: '内容点评' }));
-  box.append(h('div', { class: 'row' }, r.band ? h('span', { class: 'tag', text: '大约 ' + r.band + ' 分' }) : null, r.used_target ? h('span', { class: 'tag good', text: '用上了「' + L.x + '」' }) : null));
+  if (r.repair) box.append(h('p', {}, h('span', { class: 'tag ' + (r.repair.state === 'fixed' ? 'good' : ''), text: r.repair.state === 'fixed' ? '这一处你自己改对了' : '这一处看了答案，跟说了一遍' }), ' ', esc(r.fixes[0].better)));
+  if (r.used_target) box.append(h('div', { class: 'row' }, h('span', { class: 'tag good', text: '用上了「' + L.x + '」' })));
   if (r.comment_zh) box.append(h('p', { text: esc(r.comment_zh) }));
   if (r.corrected) box.append(h('div', {}, h('h3', { text: '改正版' }), h('div', { class: 'say' }, h('p', {}, wordify(esc(r.corrected), { src: '点评 · ' + L.t })), sayBtn(esc(r.corrected)))));
   if (r.natural) box.append(h('div', {}, h('h3', { text: '更地道的说法 · 拿来跟读' }), h('div', { class: 'say' }, h('p', {}, wordify(esc(r.natural), { src: '点评 · ' + L.t })), sayBtn(esc(r.natural)))));
-  if (Array.isArray(r.fixes) && r.fixes.length) { const f = h('div', { class: 'card' }, h('h3', { text: '要改的地方' })); for (const x of r.fixes.slice(0, 5)) f.append(h('div', { class: 'fix' }, h('div', {}, h('s', { text: esc(x.original) }), ' → ', h('b', { text: esc(x.better) })), h('span', { class: 'hint', text: esc(x.why_zh) }))); box.append(f); }
+  if (Array.isArray(r.fixes) && r.fixes.length) { const f = h('div', { class: 'card' }, h('h3', { text: '要改的地方' })); for (const x of r.fixes.slice(0, 3)) f.append(h('div', { class: 'fix' }, h('div', {}, h('s', { text: esc(x.original) }), ' → ', h('b', { text: esc(x.better) })), h('span', { class: 'hint', text: esc(x.why_zh) }))); box.append(f); }
   if (Array.isArray(r.chunks) && r.chunks.length) { const p = h('div', {}, h('h3', { text: '这个话题用得上的语块' })); for (const x of r.chunks.slice(0, 4)) p.append(h('div', { class: 'ex' }, sayBtn(esc(x.en)), h('span', { class: 'en', text: esc(x.en) }), chunkBtn(esc(x.en), esc(x.zh), '话题 · ' + L.t), h('span', { class: 'zh', text: esc(x.zh) }))); box.append(p); }
   const errN = errNotice(r.errKeys); if (errN) box.append(errN);
   return box;
 }
 function renderAudioReview(r) {
   const box = h('div', { class: 'result' }, h('h3', { text: 'AI 听你说' }));
-  box.append(h('div', { class: 'row' }, r.band_pron ? h('span', { class: 'tag', text: '发音约 ' + r.band_pron }) : null, r.band_fluency ? h('span', { class: 'tag', text: '流利度约 ' + r.band_fluency }) : null));
   if (r.summary_zh) box.append(h('p', { text: esc(r.summary_zh) }));
   for (const x of (r.pron_issues || []).slice(0, 4)) box.append(h('div', { class: 'fix' }, h('b', { text: esc(x.word) }), h('span', { class: 'hint', text: esc(x.problem_zh) + (x.tip_zh ? ' → ' + x.tip_zh : '') })));
   for (const t of (r.fluency_tips_zh || []).slice(0, 3)) box.append(h('p', { class: 'small', text: '· ' + t }));
@@ -2387,7 +2448,7 @@ async function renderSettings() {
     const [ls, st] = await Promise.all([api('/api/lessons'), api('/api/status')]);
     LESSONS = ls.lessons; N = LESSONS.length; STATUS = st;
     await Promise.all([
-      api('/api/state').then(d => { for (const k of ['days', 'lessons', 'srs', 'cards', 'errs', 'pron', 'shadow']) if (d[k]) S[k] = d[k]; Object.assign(S.prefs, d.prefs || {}); stateLoaded = true; })
+      api('/api/state').then(d => { for (const k of ['days', 'lessons', 'srs', 'cards', 'errs', 'pron', 'shadow', 'repairs']) if (d[k]) S[k] = d[k]; Object.assign(S.prefs, d.prefs || {}); stateLoaded = true; })
         .catch(e => alertBox('读不到之前的进度（' + e.message + '），这次练习不会保存。按 ⌘R 重新载入。')),
       loadRecs()]);
   } catch (e) { $('#view-today').replaceChildren(h('p', { class: 'err', text: e.message })); return; }
