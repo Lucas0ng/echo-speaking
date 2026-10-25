@@ -68,7 +68,8 @@ async function sttFull(blob, ref = '', arch = null) {
   return j;
 }
 async function stt(blob, ref = '', arch = null) { return (await sttFull(blob, ref, arch)).text; }
-const LEARNER = "The learner is a Chinese graduate student (master's level, roughly IELTS 5.5–6.5 speaking) practising spoken English. Explanations for the learner are in simplified Chinese; English examples are natural, spoken and modern.";
+const LEARNER = "The learner is a Chinese graduate student practising spoken English: reads English well, speaking is intermediate and the weak skill. "
+  + "Their goal is to speak fluently at work and in daily life. They are NOT preparing for an exam: never mention exams, test scores, examiners or IELTS bands, and give advice for real conversations. Explanations for the learner are in simplified Chinese; English examples are natural, spoken and modern.";
 
 /* ================= state ================= */
 const S = { days: {}, lessons: {}, srs: {}, cards: {}, errs: {}, pron: { tests: [], drills: {} }, shadow: {}, repairs: [], prefs: { cur: 1, voice: '', ttsRate: 0.95, autoSpeak: true, level: 'normal', rate: 1, blind: false } };
@@ -743,7 +744,7 @@ async function renderToday() {
         h('span', { class: 'mono', text: '第 ' + n + ' 课，共 ' + N + ' 课' }),
         h('button', { class: 'btn ghost icon-btn', 'aria-label': '下一课', disabled: n >= N, onclick: () => goLesson(n + 1) }, ic('right'))), sel),
     h('h2', { class: 'lesson-title', text: L.t }),
-    h('div', { class: 'lesson-sub' }, h('span', { class: 'tag', text: '雅思口语 Part ' + L.p }), L.x ? h('span', { class: 'tag lamp', text: '今日语块：' + L.x }) : null)));
+    h('div', { class: 'lesson-sub' }, h('span', { class: 'tag', text: 'IELTSCast 话题' }), L.x ? h('span', { class: 'tag lamp', text: '今日语块：' + L.x }) : null)));
 
   const steps = [[1, '逐句跟读', 'IELTSCast，约 10 分钟', 'sh'], [2, '今日语块', L.b ? 'BBC 原声，约 5 分钟' : '这一课没有', 'ph'], [3, '开口说', '自述并点评，约 3 分钟', 'sp']];
   frag.push(h('nav', { class: 'stepper', 'aria-label': '本课步骤' }, steps.map(([k, t, sub, flag]) =>
@@ -868,7 +869,7 @@ function buildStep3(panel, n, L, rec, st) {
   const dur = L.p === 2 ? 120 : 60, prompt = promptText(L);
   panel.append(
     h('div', { class: 'row' }, h('p', { class: 'prompt grow', text: prompt }), sayBtn(prompt, '朗读题目')),
-    h('p', { class: 'intro', text: (L.p === 2 ? 'Part 2：先想 1 分钟，再连续说 2 分钟。' : '说 1 分钟，给理由和例子。') + '试着把「' + L.x + '」用进去。' }));
+    h('p', { class: 'intro', text: (L.p === 2 ? '先想 1 分钟，再连续说 2 分钟。' : '说 1 分钟，给理由和例子。') + '试着把「' + L.x + '」用进去。' }));
   const recOn = Rec.isOn('sp' + n);
   const tb = h('b', { id: 'spT', text: recOn ? fmt(SPT.elapsed) : fmt(dur) }), bar = h('i', { id: 'spBar', style: 'width:' + (recOn ? Math.min(100, SPT.elapsed / dur * 100) : 0) + '%' });
   panel.append(h('div', { class: 'timer' },
@@ -883,7 +884,7 @@ function buildStep3(panel, n, L, rec, st) {
     const s = ta2.value.trim(); if (s.split(/\s+/).length < 8) { alertBox('再多说几句（至少 8 个词）再点评。'); return; }
     st.busy.review = true; renderToday();
     try {
-      st.review = await aiText(LEARNER + '\n\nIELTS-style speaking task (Part ' + L.p + '): "' + prompt + '"\nTarget chunk for today: "' + L.x + '".\nSpeech-to-text transcript of the learner (ignore punctuation and obvious mis-hearings):\n---\n' + s.slice(0, 6000) + '\n---\nNo band score or rating of any kind.\nJSON: {"comment_zh": "中文两句：做得好的一点 + 最该改的一点", "corrected": "their answer with grammar and word choice fixed, same meaning", "natural": "a more fluent, natural version, about the same length", "fixes": [{"original": "the learner\'s exact words", "better": "...", "why_zh": "中文一句", "hint_zh": "first fix only"}], "chunks": [{"en": "a useful multi-word chunk for this topic", "zh": "..."}], "used_target": true or false}. 1–3 fixes, the one that most hurts understanding first. '
+      st.review = await aiText(LEARNER + '\n\nSpeaking practice topic: "' + prompt + '"\nTarget chunk for today: "' + L.x + '".\nSpeech-to-text transcript of the learner (ignore punctuation and obvious mis-hearings):\n---\n' + s.slice(0, 6000) + '\n---\nNo band score or rating of any kind.\nJSON: {"comment_zh": "中文两句：做得好的一点 + 最该改的一点", "corrected": "their answer with grammar and word choice fixed, same meaning", "natural": "a more fluent, natural version, about the same length", "fixes": [{"original": "the learner\'s exact words", "better": "...", "why_zh": "中文一句", "hint_zh": "first fix only"}], "chunks": [{"en": "a useful multi-word chunk for this topic", "zh": "..."}], "used_target": true or false}. 1–3 fixes, the one that most hurts understanding first. '
         + 'The first fix also gets "hint_zh": a short Chinese hint that points at the problem WITHOUT giving the answer (e.g. "时态？" or "这个动词换一个更常用的？"); the learner will try to fix it themselves before seeing the rest. comment_zh must not give that answer away either. Exactly 4 chunks (multi-word expressions, not single words).' + gapPromptPart(st.stuck) + errPromptPart());
       if (st.review) { st.review.errKeys = errIngest(st.review.errors, '开口说 · ' + L.t); st.review.cards = gapIngest(st.review.gaps, '卡壳', '开口说 · ' + L.t); updateBadge(); }
     } catch (e) { alertBox(e.message); }
@@ -892,7 +893,7 @@ function buildStep3(panel, n, L, rec, st) {
   const ab = h('button', { class: 'btn', disabled: !st.blob || !!st.busy.audio, onclick: async () => {
     st.busy.audio = true; renderToday();
     try {
-      st.audioReview = await aiAudio(st.blob, LEARNER + '\n\nThe audio is the learner answering this IELTS speaking question: "' + prompt + '". Listen to HOW they speak, not only what they say: fluency, pronunciation (individual sounds, word stress, sentence stress, intonation, chunking), and how natural they sound. Focus on what would make them easier to understand. No band score or rating of any kind.\nJSON: {"summary_zh": "中文两三句总评", "pron_issues": [{"word": "word or phrase as heard", "problem_zh": "...", "tip_zh": "..."}], "fluency_tips_zh": ["..."]}. At most 4 pron_issues and 3 fluency tips.');
+      st.audioReview = await aiAudio(st.blob, LEARNER + '\n\nThe audio is the learner talking about this topic: "' + prompt + '". Listen to HOW they speak, not only what they say: fluency, pronunciation (individual sounds, word stress, sentence stress, intonation, chunking), and how natural they sound. Focus on what would make them easier to understand. No band score or rating of any kind.\nJSON: {"summary_zh": "中文两三句总评", "pron_issues": [{"word": "word or phrase as heard", "problem_zh": "...", "tip_zh": "..."}], "fluency_tips_zh": ["..."]}. At most 4 pron_issues and 3 fluency tips.');
     } catch (e) { alertBox(e.message); }
     st.busy.audio = false; renderToday();
   } }, st.busy.audio ? 'AI 在听' : '听发音和流利度');

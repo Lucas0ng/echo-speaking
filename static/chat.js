@@ -13,7 +13,7 @@ CHAT.view 里你的每条消息 { role: 'me', text, unclear?, repair?, fb?, help
   help     点过「求助」（结束总结时连同最该改的句子一起做成卡片，见 gaps.js）
 */
 const SCEN = {
-  topic: { label: '今日话题', role: n => 'You are a friendly IELTS speaking partner. Talk with the learner about "' + LESSONS[n - 1].t + '" in the style of IELTS Part ' + LESSONS[n - 1].p + ' and Part 3 follow-ups. Ask one question at a time.' },
+  topic: { label: '今日话题', role: n => 'You are a friendly, curious friend. Chat with the learner about "' + LESSONS[n - 1].t + '": ask about their own experience and opinions, react to what they say and follow up on it, like a real conversation. Ask one question at a time.' },
   research: { label: '介绍研究', line: 'academic', role: () => 'You are a friendly professor from another university meeting the learner at a poster session at an international conference. Ask about their research topic, why it matters, their method, results so far, and next steps.' },
   meeting: { label: '组会汇报', line: 'academic', role: () => "You are the learner's supervisor in a weekly lab meeting held in English. Ask them to report this week's progress, then ask kind but probing follow-up questions." },
   interview: { label: '英文面试', role: () => 'You are an interviewer for a research internship or a graduate job. Ask common interview questions one at a time.' },
