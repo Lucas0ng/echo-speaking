@@ -8,17 +8,20 @@ function bookChunks() {
   return Object.entries(S.srs).filter(([, v]) => !v.cloze && v.en && wordsOf(v.en).length >= 2 && wordsOf(v.en).length <= 6);
 }
 const CHUNK_SKIP = new Set(['someone', 'something', "someone's", "one's", 'sb', 'sth', 'a', 'an', 'the']);
-/* Does the transcript contain the chunk? Each keyword by its stem, in order, within a few words of each other. */
+/* Does the transcript contain the chunk? Each keyword by its stem, in order, within a few words of each other.
+   Irregular verb forms count as their base (made a decision, took a break), and a 4-letter word drops a final e
+   so make/take/have also match making/taking/having. */
+const chunkStem = w => w.length > 4 ? w.slice(0, w.length - 2) : w.length === 4 ? w.replace(/e$/, '') : w;
 function chunkIn(chunk, text) {
-  const keys = wordsOf(chunk).filter(w => !CHUNK_SKIP.has(w)).map(w => w.length > 4 ? w.slice(0, w.length - 2) : w);
+  const keys = wordsOf(chunk).filter(w => !CHUNK_SKIP.has(w)).map(chunkStem);
   if (!keys.length) return false;
-  const ws = wordsOf(text), gap = 3;
+  const ws = wordsOf(text), gap = 3, at = (w, k) => w.startsWith(k) || (IRREG[w] || '').startsWith(k);
   for (let i = 0; i < ws.length; i++) {
-    if (!ws[i].startsWith(keys[0])) continue;
+    if (!at(ws[i], keys[0])) continue;
     let j = i, ok = true;
     for (const k of keys.slice(1)) {
       let f = -1;
-      for (let x = j + 1; x <= Math.min(ws.length - 1, j + 1 + gap); x++) if (ws[x].startsWith(k)) { f = x; break; }
+      for (let x = j + 1; x <= Math.min(ws.length - 1, j + 1 + gap); x++) if (at(ws[x], k)) { f = x; break; }
       if (f < 0) { ok = false; break; }
       j = f;
     }
@@ -71,7 +74,19 @@ function weekSummary(recs) {
 
   const used = chunkUses(recs).filter(u => inW(u.rec.t, wk));
   if (used.length) lines.push({ k: 'chunks', text: '第一次在自由说话里用出：' + used.map(u => '「' + u.en + '」').join('、') });
+  const nounUsed = used.filter(u => S.srs[u.id]?.nf);
+  if (nounUsed.length) lines.push({ k: 'nouns', text: '其中名词说法：' + Object.entries(NOUN_LINE).map(([k, zh]) => zh + ' ' + nounUsed.filter(u => S.srs[u.id].nf.line === k).length + ' 个').join('，') });
   return lines;
+}
+
+/* Noun cards per line: how many are in the book, and how many have turned up in free speech. Daily and work kept apart. */
+function nounCounts(uses) {
+  const out = {};
+  for (const k of Object.keys(NOUN_LINE)) out[k] = {
+    book: Object.values(S.srs).filter(v => v.nf?.line === k).length,
+    used: uses.filter(u => S.srs[u.id]?.nf?.line === k).length,
+  };
+  return out;
 }
 
 /* Real tasks, each proven by the first recording that did it. rec is null until reached;
@@ -153,6 +168,8 @@ function evidenceSection(recs) {
     chunkBlock.append(chunks);
     if (uses.length > shown.length) chunkBlock.append(h('p', { class: 'hint ev-more', text: '还有 ' + (uses.length - shown.length) + ' 个' }));
   }
+  const nc = nounCounts(uses);
+  if (nc.daily.book || nc.work.book) chunkBlock.append(h('p', { class: 'hint', text: '名词说法 · ' + Object.entries(NOUN_LINE).map(([k, zh]) => zh + '：语块本 ' + nc[k].book + ' 条，用出 ' + nc[k].used + ' 个').join('；') }));
   box.append(chunkBlock);
 
   return box;

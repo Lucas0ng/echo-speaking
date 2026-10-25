@@ -1,7 +1,8 @@
 'use strict';
 /* 语块复习：看中文，用语块说一句自己的新句子（不只是说出语块本身）。界面在 app.js 的 renderChunks。
 
-Plain chunk cards (no cloze, no tpl) of at most CHUNK_MAX_WORDS words use this mode; longer entries (whole sentences
+Plain chunk cards (no cloze, no tpl) of at most CHUNK_MAX_WORDS words use this mode (noun cards too: they show nf.cue,
+the idea said the Chinese verb way, instead of zh — nouns.js); longer entries (whole sentences
 starred from a lesson) are still said as they are. Grading:
   chunk not used                         → 忘了
   used, but the sentence is wrong        → 模糊 (also the cap when the learner peeked at the chunk)
@@ -29,7 +30,8 @@ function chunkUsed(chunk, heard) {
   return want.length > 0;
 }
 async function chunkJudge(v, heard) {
-  const j = await aiText(LEARNER + '\n\nThe learner was shown "' + (v.zh || v.en) + '" and asked to say a NEW sentence of their own that uses the chunk "' + v.en + '".'
+  const j = await aiText(LEARNER + '\n\nThe learner was shown "' + (v.nf?.cue || v.zh || v.en) + '" and asked to say '
+    + (v.nf ? 'that idea in English (they may change the details to fit their own life), using the noun chunk "' : 'a NEW sentence of their own that uses the chunk "') + v.en + '".'
     + '\nSpeech-to-text of what they said (ignore punctuation, capitalisation and obvious mishearings):\n"' + heard + '"\n'
     + 'Judge whether the chunk is used correctly and naturally and the sentence is acceptable spoken English. Small slips elsewhere do not fail it.\n'
     + 'JSON: {"ok": true or false, "note_zh": "中文一句：用得对不对、哪里要改", "better": "their sentence made natural, keeping their idea and the chunk"}', { think: false });

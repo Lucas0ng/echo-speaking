@@ -966,9 +966,9 @@ function buildStep3(panel, n, L, rec, st) {
     st.busy.review = true; renderToday();
     try {
       st.review = await aiText(LEARNER + '\n\nSpeaking practice topic: "' + prompt + '"\nTarget chunk for today: "' + L.x + '".\nSpeech-to-text transcript of the learner (ignore punctuation and obvious mis-hearings):\n---\n' + s.slice(0, 6000) + '\n---\nNo band score or rating of any kind.\nJSON: {"comment_zh": "中文两句：做得好的一点 + 最该改的一点", "corrected": "their answer with grammar and word choice fixed, same meaning", "natural": "a more fluent, natural version, about the same length", "fixes": [{"original": "the learner\'s exact words", "better": "...", "why_zh": "中文一句", "hint_zh": "first fix only"}], "chunks": [{"en": "a useful multi-word chunk for this topic", "zh": "..."}], "used_target": true or false}. 1–3 fixes, the one that most hurts understanding first. '
-        + 'The first fix also gets "hint_zh": a short Chinese hint that points at the problem WITHOUT giving the answer (e.g. "时态？" or "这个动词换一个更常用的？"); the learner will try to fix it themselves before seeing the rest. comment_zh must not give that answer away either. Exactly 4 chunks (multi-word expressions, not single words).' + gapPromptPart(st.stuck) + errPromptPart());
+        + 'The first fix also gets "hint_zh": a short Chinese hint that points at the problem WITHOUT giving the answer (e.g. "时态？" or "这个动词换一个更常用的？"); the learner will try to fix it themselves before seeing the rest. comment_zh must not give that answer away either. Exactly 4 chunks (multi-word expressions, not single words).' + gapPromptPart(st.stuck) + nounPromptPart() + errPromptPart());
       if (st.review) {
-        st.review.errKeys = errIngest(st.review.errors, '开口说 · ' + L.t); st.review.cards = gapIngest(st.review.gaps, '卡壳', '开口说 · ' + L.t); updateBadge();
+        st.review.errKeys = errIngest(st.review.errors, '开口说 · ' + L.t); st.review.cards = gapIngest(st.review.gaps, '卡壳', '开口说 · ' + L.t); st.review.nounCards = nounIngest(st.review.nouns, '开口说 · ' + L.t); updateBadge();
         if (st.review.natural) { lessonRec(n).natural = String(st.review.natural).slice(0, 1200); save(); } // shown after tomorrow's retell
       }
     } catch (e) { alertBox(e.message); }
@@ -1089,6 +1089,7 @@ function renderReview(r, L) {
   if (r.natural) box.append(h('div', {}, h('h3', { text: '更地道的说法 · 拿来跟读' }), h('div', { class: 'say' }, h('p', {}, wordify(esc(r.natural), { src: '点评 · ' + L.t })), sayBtn(esc(r.natural)))));
   if (Array.isArray(r.fixes) && r.fixes.length) { const f = h('div', { class: 'card' }, h('h3', { text: '要改的地方' })); for (const x of r.fixes.slice(0, 3)) f.append(h('div', { class: 'fix' }, h('div', {}, h('s', { text: esc(x.original) }), ' → ', h('b', { text: esc(x.better) })), h('span', { class: 'hint', text: esc(x.why_zh) }))); box.append(f); }
   if (Array.isArray(r.chunks) && r.chunks.length) { const p = h('div', {}, h('h3', { text: '这个话题用得上的语块' })); for (const x of r.chunks.slice(0, 4)) p.append(h('div', { class: 'ex' }, sayBtn(esc(x.en)), h('span', { class: 'en', text: esc(x.en) }), chunkBtn(esc(x.en), esc(x.zh), '话题 · ' + L.t), h('span', { class: 'zh', text: esc(x.zh) }))); box.append(p); }
+  put(box, nounNotice(r.nounCards));
   const errN = errNotice(r.errKeys); if (errN) box.append(errN);
   return box;
 }
@@ -1413,8 +1414,9 @@ function analysisView(a, { mine = false, src = '' } = {}) {
     for (const c of a.chunks) list.append(h('div', { class: 'ana-chunk' },
       h('span', { class: 'en', text: c.en }), h('span', { class: 'zh', text: c.zh || '' }),
       sayBtn(c.en), chunkBtn(c.en, c.zh, src)));
-    box.append(h('div', { class: 'ana-chunk-box' }, h('h3', { class: 'tpl-title', text: '值得偷的语块' }), list));
+    box.append(h('div', { class: 'ana-chunk-box' }, h('h3', { class: 'tpl-title', text: '这句里能拿来用的语块' }), list));
   }
+  put(box, nounView(a.nouns, src));
   return box;
 }
 
@@ -1462,11 +1464,11 @@ function renderChunks() {
     if (!RV.id) { RV.on = false; frag.push(h('div', { class: 'next-cta' }, h('span', { text: '今天的复习完成了，一共 ' + RV.done + ' 条。' }), h('button', { class: 'btn', onclick: () => { RV.done = 0; renderChunks(); } }, '好'))); }
     else {
       const v = S.srs[RV.id], isWord = !!v.cloze;
-      const newSay = isSentenceCard(v) && !!String(v.zh || '').trim();
+      const newSay = isSentenceCard(v) && !!String(v.nf?.cue || v.zh || '').trim();
       const card = h('div', { class: 'review' },
         h('div', { class: 'src', text: '还剩 ' + due.length + ' 条 · ' + (v.src || '') }),
         newSay
-          ? h('div', { class: 'q new-say-q', text: v.zh })
+          ? h('div', { class: 'q new-say-q' }, v.nf ? h('div', { class: 'row', style: 'justify-content:center' }, nounTag(v.nf.line)) : null, v.nf?.cue || v.zh)
           : isWord
             ? h('div', { class: 'q' }, h('div', { class: 'cloze', text: clozeOf(v.en, v.cloze) }), v.zh ? h('div', { class: 'small muted' }, v.zh) : null)
             : v.tpl
@@ -1508,7 +1510,7 @@ function renderChunks() {
             }, ['说出来', '说完了']),
           newSay && !RV.peek ? h('button', { class: 'btn', onclick: () => { RV.peek = true; renderChunks(); } }, '提示语块') : null,
           h('button', { class: 'btn', onclick: () => { RV.shown = true; renderChunks(); playChunkOriginal(v); } }, '直接看答案'));
-        put(card, h('p', { class: 'hint', text: newSay ? '用这个语块说一句你自己的话（关于你的学习或生活），说完再看答案。' : isWord ? '看挖空的句子，把整句说出来，再看答案。' : v.tpl ? '看中文，用这个句型把整句说出来，再看答案。' : '先开口说出英文，再看答案。说出来比在心里想更能记住。' }), row);
+        put(card, h('p', { class: 'hint', text: newSay && v.nf ? '这句中文是动词说法。用英语的名词说法把它说出来（细节可以换成你自己的事），说完再看答案。' : newSay ? '用这个语块说一句你自己的话（关于你的学习或生活），说完再看答案。' : isWord ? '看挖空的句子，把整句说出来，再看答案。' : v.tpl ? '看中文，用这个句型把整句说出来，再看答案。' : '先开口说出英文，再看答案。说出来比在心里想更能记住。' }), row);
         if (RV.busy) card.append(h('p', { class: 'thinking', text: '识别中…' }));
       } else {
         if (newSay) {
@@ -1552,6 +1554,7 @@ function renderChunks() {
       v.cloze ? h('span', { class: 'tag', text: '词卡' }) : null,
       v.cloze && v.mine ? h('span', { class: 'tag', text: '我说的' }) : null,
       v.tpl ? h('span', { class: 'tag', text: '句型' }) : null,
+      v.nf ? nounTag(v.nf.line) : null,
       v.tpl
         ? h('span', { class: 'tpl-line' }, '句型：', tplFrame(v.tpl), [v.zh, v.src].filter(Boolean).length ? ' · ' + [v.zh, v.src].filter(Boolean).join(' · ') : '')
         : [v.zh, v.src].filter(Boolean).join(' · '),

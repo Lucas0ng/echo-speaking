@@ -9,6 +9,7 @@ analyzeSentences(['...', ...], { mine }) → [{
   tense_zh, pattern_zh,
   template: null | { en: 'The main reason I ___ is that ___.', zh, example: { en, zh } },
   chunks: [{ en, zh }],
+  nouns: [{ en, zh, line, cue }],   // 名词说法 (nouns.js)
 }]
 Answers are cached on disk, so analysing the same sentences again is free.
 Template cards go into S.srs with { tpl, tplZh }: review shows example.zh + the frame, the learner says the example sentence.
@@ -31,6 +32,7 @@ function sentPrompt(list, mine) {
     + '"tense_zh": "时态和语态，如：现在完成时，主动", '
     + '"pattern_zh": "中文一句说明句子结构，如：主句 + because 引导的原因状语从句", '
     + '"template": {"en": "the ONE transferable pattern in this sentence as a short frame, 4–12 words, with ___ for the swappable parts — keep only the reusable core, not the whole sentence with blanks; for a long sentence pick its single most useful clause and drop the rest, so \\"After three months in the lab we finally figured out why the samples kept cracking.\\" gives \\"It took us ___ to figure out why ___.\\" (other frames: \\"The main reason I ___ is that ___.\\", \\"I\'ve been ___ since ___.\\")", "zh": "这个句型的中文意思", "example": {"en": "a new sentence using the frame, about a graduate student\'s research or daily life", "zh": "..."}} or null when the sentence is too short or formulaic to be worth a frame, '
+    + nounAnaPart()
     + '"chunks": [{"en": "a multi-word chunk from the sentence that is worth reusing in other conversations (not trivial ones like I think, not words tied to this one topic)", "zh": "..."}] (0–3)'
     + '} ]}';
 }
@@ -40,12 +42,15 @@ function sentItem(s, x, mine) {
   const t = x?.template;
   // the AI sometimes echoes an already-natural sentence instead of leaving native empty
   const native = mine && !sameWords(clean(x?.native), s) ? clean(x?.native) : '';
+  const nouns = nounList(x?.nouns).slice(0, 2);
   return {
     s, native, why_zh: native ? clean(x?.why_zh) : '',
     skeleton: (Array.isArray(x?.skeleton) ? x.skeleton : []).filter(p => p?.text).slice(0, 8).map(p => ({ text: clean(p.text, 200), role: SKEL_ROLES.includes(p.role) ? p.role : '其他' })),
     tense_zh: clean(x?.tense_zh, 60), pattern_zh: clean(x?.pattern_zh, 120),
     template: t?.en ? { en: clean(t.en, 200), zh: clean(t.zh, 120), example: { en: clean(t.example?.en, 200), zh: clean(t.example?.zh, 200) } } : null,
-    chunks: (Array.isArray(x?.chunks) ? x.chunks : []).filter(c => c?.en).slice(0, 3).map(c => ({ en: clean(c.en, 80), zh: clean(c.zh, 80) })),
+    // a noun pattern already has its own row, so it is not listed again as a plain chunk
+    chunks: (Array.isArray(x?.chunks) ? x.chunks : []).filter(c => c?.en && !nouns.some(nn => sameWords(nn.en, String(c.en)))).slice(0, 3).map(c => ({ en: clean(c.en, 80), zh: clean(c.zh, 80) })),
+    nouns,
   };
 }
 async function analyzeSentences(list, { mine = false } = {}) {
