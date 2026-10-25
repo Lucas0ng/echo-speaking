@@ -674,7 +674,9 @@ function pollLater(path) {
 
 /* ================= header & tabs ================= */
 function renderHeader() {
-  // Words only, no row of dots to fill: this calendar week (Monday first) and what was done last time.
+  // A dot for each of the last 7 days shows at a glance how long it has been; the words count this calendar week (Monday first).
+  const wk = $('#weekDots'); wk.replaceChildren();
+  for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); const k = ymd(d); wk.append(h('i', { class: (active(k) ? 'on' : '') + (i === 0 ? ' today' : ''), title: k })); }
   const mon = new Date(); mon.setDate(mon.getDate() - (mon.getDay() + 6) % 7);
   let nWk = 0; for (let i = 0; i < 7; i++) { const d = new Date(mon); d.setDate(mon.getDate() + i); nWk += active(ymd(d)); }
   const last = lastActiveDay();

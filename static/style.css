@@ -65,6 +65,10 @@ a { color: inherit; }
 .brand p { color: var(--muted); font-size: 12px; margin-top: 4px; }
 .habit { display: grid; gap: 8px; padding: 0 10px; }
 .habit p { color: var(--muted); font-size: 12px; }
+.week { display: flex; gap: 4px; }
+.week i { flex: 1; max-width: 22px; height: 4px; border-radius: 2px; background: var(--heat-0); display: block; }
+.week i.on { background: var(--ink); }
+.week i.today { box-shadow: 0 0 0 1.5px var(--bg), 0 0 0 3px var(--muted); }
 .nav { display: grid; gap: 2px; }
 .nav a { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--r-sm); color: var(--muted); text-decoration: none; font-weight: 500; font-size: 14px; transition: background .15s, color .15s; }
 .nav a:hover { color: var(--ink); background: var(--surface-2); }
