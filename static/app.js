@@ -89,13 +89,19 @@ function markDay(flag) { const d = day(); if (flag === 'ch') d.ch = (d.ch || 0) 
 function markLesson(n, step) {
   const L = lessonRec(n);
   if (L.skip) delete L.skip[step];
+  (L.d ||= {})[step] = today(); // last day each step was spoken; the next day's warm-up retells the last talk
   if (!L[step]) { L[step] = true; if (lessonDone(n) && !L.at) L.at = today(); }
   markDay(step);
 }
 /* Moving on without speaking is a skip, kept apart from done: it never counts towards the lesson or the habit dots. */
 function skipLesson(n, step) { const L = lessonRec(n); if (!L[step]) { (L.skip ||= {})[step] = today(); save(); } }
-const DAY_FLAGS = ['sh', 'ph', 'sp', 'rv', 'rt', 'bl', 'er', 'pr', 'so'];
+const DAY_FLAGS = ['sh', 'ph', 'sp', 'rv', 'rt', 'bl', 'er', 'pr', 'so', 'wu'];
 const active = d => { const v = S.days[d]; return !!(v && (v.ch || DAY_FLAGS.some(k => v[k]))); };
+const FLAG_ZH = { wu: '复述上次', sh: '跟读', ph: '语块造句', sp: '开口说', ch: 'AI 对话', rt: '4/3/2', so: '自言自语', rv: '语块复习', er: '错误本', pr: '发音', bl: '基准录音' };
+const lastActiveDay = () => Object.keys(S.days).filter(d => d < today() && active(d)).sort().pop() || null;
+const daysAgo = d => Math.round((new Date(today() + 'T12:00:00') - new Date(d + 'T12:00:00')) / 864e5);
+const relDay = d => { const n = daysAgo(d); return n === 1 ? '昨天' : n === 2 ? '前天' : n + ' 天前'; };
+const dayWhat = d => Object.keys(FLAG_ZH).filter(k => S.days[d]?.[k]).slice(0, 2).map(k => FLAG_ZH[k]).join('、');
 const level = d => { const v = S.days[d]; if (!v) return 0; return Math.min(3, DAY_FLAGS.filter(k => v[k]).length + (v.ch ? 1 : 0)); };
 /* A lesson without a BBC phrase (feed not downloaded) is done after shadowing and speaking. */
 const lessonDone = n => { const r = S.lessons[n], L = LESSONS[n - 1]; return !!(r && r.sh && r.sp && (r.ph || (L && !L.b))); };
@@ -259,7 +265,8 @@ const METRICS = [
   { k: 'mlr', zh: '连贯段', unit: '词', better: 'up', digits: 1, tip: '平均连着说几个词才停一下（停顿 ≥ 0.25 秒或说 um 都算停）。' },
 ];
 // Curves use free monologues only; rounds 2–3 of a 4/3/2 set repeat round 1, so they would inflate the trend.
-const inCurve = r => r.metrics?.reliable && CURVE_KINDS.includes(r.kind) && !(r.kind === 'r432' && r.meta?.round !== 1);
+// The warm-up retells a talk from before, so it is left out too.
+const inCurve = r => r.metrics?.reliable && CURVE_KINDS.includes(r.kind) && !(r.kind === 'r432' && r.meta?.round !== 1) && !r.meta?.warmup;
 function metricsView(m, base) {
   if (!m) return null;
   return h('div', { class: 'metrics' },
@@ -667,9 +674,16 @@ function pollLater(path) {
 
 /* ================= header & tabs ================= */
 function renderHeader() {
-  const wk = $('#weekDots'); wk.replaceChildren(); let n7 = 0;
-  for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); const k = ymd(d); n7 += active(k); wk.append(h('i', { class: (active(k) ? 'on' : '') + (i === 0 ? ' today' : ''), title: k })); }
-  $('#habitLine').textContent = (active(today()) ? '今天开过口了' : '今天还没开口') + ' · 近 7 天练了 ' + n7 + ' 天';
+  // This calendar week, Monday first: it starts over every week, so a missed day is never a broken chain.
+  const wk = $('#weekDots'); wk.replaceChildren(); let nWk = 0;
+  const mon = new Date(); mon.setDate(mon.getDate() - (mon.getDay() + 6) % 7);
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(mon); d.setDate(mon.getDate() + i); const k = ymd(d);
+    nWk += active(k); wk.append(h('i', { class: (active(k) ? 'on' : '') + (k === today() ? ' today' : k > today() ? ' future' : ''), title: k }));
+  }
+  const last = lastActiveDay();
+  $('#habitLine').textContent = active(today()) ? '今天开过口了 · 本周练了 ' + nWk + ' 天'
+    : (nWk ? '本周练了 ' + nWk + ' 天' : '这周还没开始') + (last ? ' · 上次是' + relDay(last) + '：' + dayWhat(last) : '');
   $('#subline').textContent = '已完成 ' + lessonsDone() + ' / ' + N + ' 课';
   if (STATUS.lessons) $('#railFoot').textContent = STATUS.ielts_transcribed >= STATUS.lessons ? '全部字幕已就绪' : '本地字幕 ' + STATUS.ielts_transcribed + ' / ' + STATUS.lessons + ' 集，空闲时在后台生成';
 }
@@ -746,7 +760,8 @@ async function renderToday() {
     h('h2', { class: 'lesson-title', text: L.t }),
     h('div', { class: 'lesson-sub' }, h('span', { class: 'tag', text: 'IELTSCast 话题' }), L.x ? h('span', { class: 'tag lamp', text: '今日语块：' + L.x }) : null)));
 
-  const steps = [[1, '逐句跟读', 'IELTSCast，约 10 分钟', 'sh'], [2, '今日语块', L.b ? 'BBC 原声，约 5 分钟' : '这一课没有', 'ph'], [3, '开口说', '自述并点评，约 3 分钟', 'sp']];
+  const wu = warmupCard(n); if (wu) frag.push(wu);
+  const steps = [[1, '逐句跟读', '跟读 5 句，约 5 分钟', 'sh'], [2, '今日语块', L.b ? 'BBC 原声，约 3 分钟' : '这一课没有', 'ph'], [3, '开口说', '说完先自己改，约 3 分钟', 'sp']];
   frag.push(h('nav', { class: 'stepper', 'aria-label': '本课步骤' }, steps.map(([k, t, sub, flag]) =>
     h('button', { class: rec[flag] ? 'is-done' : '', 'aria-current': st.step === k ? 'step' : null, onclick: () => { st.step = k; stopEverything(); renderToday(); } },
       h('span', { class: 'n' }, rec[flag] ? ic('check') : String(k)), h('b', { text: t }), h('small', { text: !rec[flag] && rec.skip?.[flag] ? '跳过了' : sub })))));
@@ -756,12 +771,79 @@ async function renderToday() {
   else if (st.step === 2) await buildStep2(panel, n, L, rec, st);
   else buildStep3(panel, n, L, rec, st);
   frag.push(panel);
+  frag.push(closingCard());
 
   if (lessonDone(n)) frag.push(h('div', { class: 'next-cta' }, h('span', { text: '第 ' + n + ' 课完成了。' }),
     h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => startChatOn(n) }, '用这个话题和 AI 聊聊'), n < N ? h('button', { class: 'btn primary', onclick: () => goLesson(n + 1) }, '下一课') : null)));
 
   if (myTok !== RTOK || $('#view-today').hidden || S.prefs.cur !== n) return;
   const y = window.scrollY; root.replaceChildren(...frag); window.scrollTo(0, y);
+}
+/* The day opens with a 1-minute retell of the last lesson talked about. After a gap of a day or more it is the way back in:
+   that minute alone counts as having spoken today. */
+const WU = { busy: false, j: null, m: 0 };
+function warmupSource(cur) {
+  let best = null;
+  for (const [k, r] of Object.entries(S.lessons)) {
+    const m = +k, d = r?.d?.sp || r?.at || '';
+    if (!r?.sp || !LESSONS[m - 1] || d === today() || (!d && m === cur)) continue;
+    if (!best || d > best.d || (d === best.d && m > best.m)) best = { m, d };
+  }
+  return best ? best.m : 0;
+}
+function warmupCard(cur) {
+  const m = WU.j ? WU.m : warmupSource(cur); if (!m) return null;
+  const P = LESSONS[m - 1], natural = S.lessons[m]?.natural || '';
+  if (S.days[today()]?.wu && !WU.j) return h('div', { class: 'notice row' }, ic('check'), h('span', { text: '今天的热身做完了：复述了「' + P.t + '」。' }));
+  const last = lastActiveDay(), gap = !active(today()) && last && daysAgo(last) >= 2 ? daysAgo(last) - 1 : 0;
+  const on = TMR.owner === 'wu';
+  const btn = h('button', { class: 'btn ' + (on ? 'rec' : 'primary'), disabled: WU.busy, onclick: async () => {
+    const blob = await timedRec('wu', 60, renderToday); if (!blob) { renderToday(); return; }
+    WU.busy = true; WU.j = null; WU.m = m; renderToday();
+    try {
+      WU.j = await sttFull(blob, '', { kind: 'talk', meta: { lesson: m, topic: P.t, prompt: promptText(P), warmup: true } });
+      if (spoke(WU.j, SP_MIN_WORDS)) markDay('wu');
+    } catch (e) { alertBox(e.message); }
+    WU.busy = false; renderToday();
+  } }, on ? [recDot(), '说完了'] : [ic('mic'), WU.j ? '再说一遍' : '开始说']);
+  const box = h('div', { class: 'result' },
+    h('h3', { text: gap ? '隔了 ' + gap + ' 天，没关系。先用 1 分钟找回来' : '热身 · 复述上次（约 2 分钟）' }),
+    h('p', {}, '上次讲的是「' + P.t + '」。不看稿再讲 1 分钟', P.x ? ['，试着用上', h('mark', { text: P.x })] : null, '。'),
+    gap ? h('p', { class: 'hint', text: '说完这 1 分钟，今天就算开过口了；后面能做多少做多少。' }) : null,
+    h('div', { class: 'row' }, btn, timerView('wu', 60)),
+    WU.busy ? h('p', { class: 'thinking', text: '本地转写中' }) : null);
+  if (WU.j && !WU.busy) {
+    const ok = spoke(WU.j, SP_MIN_WORDS);
+    put(box, ok ? null : h('p', { class: 'err', text: '这段太短或没识别清（至少 ' + SP_MIN_WORDS + ' 个词），再说一次。' }),
+      ok && P.x ? h('p', {}, h('span', { class: 'tag ' + (chunkIn(P.x, WU.j.text) ? 'good' : ''), text: chunkIn(P.x, WU.j.text) ? '用上了「' + P.x + '」' : '这次没用上「' + P.x + '」' })) : null,
+      ok ? metricsView(WU.j.metrics) : null,
+      ok && natural ? h('details', {}, h('summary', { text: '对照上次 AI 给的地道说法' }), h('div', { class: 'say' }, h('p', { text: natural }), sayBtn(natural))) : null);
+  }
+  return box;
+}
+/* End of the session: what is due for review, then one optional extra picked by how long each method has been left. */
+const EXTRAS = [
+  { k: 'rt', every: 7, tab: 'retell', title: '4/3/2 复述', why: '同一段讲三遍、一遍比一遍短，最练流利度。' },
+  { k: 'ch', every: 7, tab: 'chat', title: 'AI 对话', why: '和 AI 聊一个场景，练接话和追问。' },
+  { k: 'so', every: 3, tab: 'solo', title: '自言自语 60 秒', why: '60 秒不停说，卡住了也接着往下说。' },
+  { k: 'pr', every: 14, tab: 'pron', title: '发音练习', why: '练你容易混的音。' },
+];
+function pickExtra() {
+  const since = k => { const d = Object.keys(S.days).filter(x => S.days[x]?.[k]).sort().pop(); return d ? daysAgo(d) : Infinity; };
+  return EXTRAS.map(x => ({ ...x, n: since(x.k) })).filter(x => x.n > 0).sort((a, b) => b.n / b.every - a.n / a.every)[0] || null;
+}
+function closingCard() {
+  const nCards = dueList().length, nErr = errDueList().length, x = pickExtra();
+  const box = h('div', { class: 'result' }, h('h3', { text: '收尾 · 约 2 分钟' }));
+  if (nCards || nErr) box.append(h('div', { class: 'row' },
+    h('span', { class: 'grow', text: [nCards ? '语块本 ' + nCards + ' 条到期' : '', nErr ? '错误本 ' + nErr + ' 个待复检' : ''].filter(Boolean).join('，') + '。做几条就行。' }),
+    nErr ? h('button', { class: 'btn', onclick: () => setTab('errors') }, '去错误本') : null,
+    nCards ? h('button', { class: 'btn', onclick: () => setTab('chunks') }, '去语块本') : null));
+  else box.append(h('p', { class: 'hint', text: '今天没有到期的复习。' }));
+  if (x) box.append(h('div', { class: 'row' },
+    h('p', { class: 'grow' }, h('b', { text: '今天加练（可做可不做）：' + x.title }), h('br'), h('span', { class: 'hint', text: x.why + (x.n === Infinity ? '还没练过。' : '上次是 ' + x.n + ' 天前。') })),
+    h('button', { class: 'btn ghost', onclick: () => setTab(x.tab) }, '去练', ic('right'))));
+  return box;
 }
 function nextStepButton(n, k, rec, flag, how) {
   const st = lp(n), done = rec[flag];
@@ -886,7 +968,10 @@ function buildStep3(panel, n, L, rec, st) {
     try {
       st.review = await aiText(LEARNER + '\n\nSpeaking practice topic: "' + prompt + '"\nTarget chunk for today: "' + L.x + '".\nSpeech-to-text transcript of the learner (ignore punctuation and obvious mis-hearings):\n---\n' + s.slice(0, 6000) + '\n---\nNo band score or rating of any kind.\nJSON: {"comment_zh": "中文两句：做得好的一点 + 最该改的一点", "corrected": "their answer with grammar and word choice fixed, same meaning", "natural": "a more fluent, natural version, about the same length", "fixes": [{"original": "the learner\'s exact words", "better": "...", "why_zh": "中文一句", "hint_zh": "first fix only"}], "chunks": [{"en": "a useful multi-word chunk for this topic", "zh": "..."}], "used_target": true or false}. 1–3 fixes, the one that most hurts understanding first. '
         + 'The first fix also gets "hint_zh": a short Chinese hint that points at the problem WITHOUT giving the answer (e.g. "时态？" or "这个动词换一个更常用的？"); the learner will try to fix it themselves before seeing the rest. comment_zh must not give that answer away either. Exactly 4 chunks (multi-word expressions, not single words).' + gapPromptPart(st.stuck) + errPromptPart());
-      if (st.review) { st.review.errKeys = errIngest(st.review.errors, '开口说 · ' + L.t); st.review.cards = gapIngest(st.review.gaps, '卡壳', '开口说 · ' + L.t); updateBadge(); }
+      if (st.review) {
+        st.review.errKeys = errIngest(st.review.errors, '开口说 · ' + L.t); st.review.cards = gapIngest(st.review.gaps, '卡壳', '开口说 · ' + L.t); updateBadge();
+        if (st.review.natural) { lessonRec(n).natural = String(st.review.natural).slice(0, 1200); save(); } // shown after tomorrow's retell
+      }
     } catch (e) { alertBox(e.message); }
     st.busy.review = false; renderToday();
   } }, st.busy.review ? 'AI 点评中' : '点评内容');
@@ -2346,7 +2431,8 @@ async function renderProgress() {
   await loadRecs();
   if (root.hidden) return;
   const frag = [h('h2', { class: 'page-title', text: '进步' }),
-    h('p', { class: 'intro', text: '这里只放你的录音和从录音里算出来的数字，不打分、不算等级。指标由本机 Whisper 的逐词时间戳算出，单次会有波动，看趋势。' })];
+    h('p', { class: 'intro', text: '这里只放你的录音和从录音里算出来的数字，不打分、不算等级。指标由本机 Whisper 的逐词时间戳算出，单次会有波动，看趋势。' }),
+    evidenceSection(RECS.list)];
   frag.push(h('div', { class: 'section' }, h('h2', { text: '基准录音：第 1 次 vs 现在' }), BASELINES.map(baselineCard)));
 
   const curve = h('div', { class: 'section' }, h('div', { class: 'row' }, h('h2', { class: 'grow', text: '流利度曲线' }),
