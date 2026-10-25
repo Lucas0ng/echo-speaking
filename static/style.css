@@ -459,12 +459,14 @@ audio.native { width: 100%; height: 40px; }
 .focus-tag.link { background: color-mix(in srgb, var(--focus) 16%, transparent); color: color-mix(in srgb, var(--focus) 72%, var(--ink)); }
 .focus-tag.stress { background: color-mix(in srgb, var(--accent) 16%, transparent); color: color-mix(in srgb, var(--accent) 72%, var(--ink)); }
 .focus-tag.tone { background: color-mix(in srgb, var(--good) 16%, transparent); color: color-mix(in srgb, var(--good) 72%, var(--ink)); }
+.focus-tag.group { background: color-mix(in srgb, var(--ink) 10%, transparent); color: var(--ink); }
 .focus-sound { font: 500 19px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .01em; color: var(--ink); overflow-wrap: anywhere; }
 .focus-sound.blind { filter: blur(7px); user-select: none; }
 .focus-tip { margin: 0; }
 .focus-w { border-radius: 3px; padding: 0 1px; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
 .focus-w-link { background: color-mix(in srgb, var(--focus) 10%, transparent); text-decoration-color: color-mix(in srgb, var(--focus) 65%, transparent); }
 .focus-w-stress { background: color-mix(in srgb, var(--accent) 10%, transparent); text-decoration-color: color-mix(in srgb, var(--accent) 65%, transparent); }
+.focus-w-group { background: color-mix(in srgb, var(--ink) 7%, transparent); text-decoration-color: color-mix(in srgb, var(--ink) 45%, transparent); }
 .focus-w-tone { background: color-mix(in srgb, var(--good) 10%, transparent); text-decoration-color: color-mix(in srgb, var(--good) 65%, transparent); }
 
 /* ---------- pron (发音) ---------- */

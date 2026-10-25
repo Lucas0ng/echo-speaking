@@ -1,8 +1,9 @@
 'use strict';
 /* 发音：跟读每句一个练习重点 + 个人发音诊断（最小对立对）。页面在 app.js。
 
-跟读重点 shadowFocus(path, sents, i) → { kind: 'link'|'stress'|'tone', words, sound, tip_zh }
-  Kinds rotate by sentence (i % 3) so a session covers linking, stress and intonation; AI writes 8 sentences per
+跟读重点 shadowFocus(path, sents, i) → { kind: 'link'|'stress'|'tone'|'group', words, sound, tip_zh }
+  Kinds rotate by sentence (i % 4) so a session covers linking, stress, intonation and thought groups (where to
+  pause and which word in each group carries the stress: a misplaced stress hurts understanding more than one wrong sound); AI writes 8 sentences per
   call, cached on disk.
 
 发音诊断 uses CONTRASTS (minpairs.js). Words are read as a plain list with a pause after each: a carrier like
@@ -14,17 +15,18 @@ S.pron = {
   drills: { [cid]: [{ t, mode: 'listen'|'say', word, ok, heard? }] },  // every drill trial
 }
 */
-const FOCUS_KINDS = { link: '连读', stress: '重音', tone: '语调' };
+const FOCUS_KINDS = { link: '连读', stress: '重音', tone: '语调', group: '断句' };
 const FOCUS_KEYS = Object.keys(FOCUS_KINDS), FOCUS_BLOCK = 8;
 const FOCUS = new Map(); // path + block → promise of items
 function focusPrompt(list, start) {
   return LEARNER + '\n\nThe learner shadows these sentences from native-speaker audio, one at a time. Give each sentence ONE thing to focus on, '
     + 'of the kind in brackets (if that kind has nothing worth practising in the sentence, use another kind and set "kind" to it):\n'
-    + list.map((s, k) => (k + 1) + '. [' + FOCUS_KEYS[(start + k) % 3] + '] ' + s).join('\n')
+    + list.map((s, k) => (k + 1) + '. [' + FOCUS_KEYS[(start + k) % FOCUS_KEYS.length] + '] ' + s).join('\n')
     + '\nKinds: link = where words run together in natural speech (consonant-to-vowel linking, flapped t, dropped sounds, want to → wanna); '
     + 'stress = which words carry the sentence stress and which small words are weak; '
-    + 'tone = the intonation (falling at the end of a statement or wh-question, rising on a yes/no question, list intonation, fall-rise).\n'
-    + 'JSON: {"items": [one per sentence, same order: {"kind": "link" | "stress" | "tone", "words": "the exact words of the sentence this is about, 1–5 words, copied as written", '
+    + 'tone = the intonation (falling at the end of a statement or wh-question, rising on a yes/no question, list intonation, fall-rise); '
+    + 'group = thought groups: where a speaker naturally pauses in this sentence, and the one focus word in each group that carries the main stress. For this kind, "words" is the most important focus word, "sound" is the whole sentence split with " / " at each pause and the focus words in CAPITALS (e.g. "when I got HOME / I was too TIRED / to COOK"), and tip_zh says where to pause and which word to stress.\n'
+    + 'JSON: {"items": [one per sentence, same order: {"kind": "link" | "stress" | "tone" | "group", "words": "the exact words of the sentence this is about, 1–5 words, copied as written", '
     + '"sound": "how it really sounds in simple respelling, CAPITALS for stressed syllables, ↗ ↘ for pitch, e.g. \\"bring-tə-YOU\\", \\"LANguage COACHing\\", \\"your spoken ENGlish ↘\\"", '
     + '"tip_zh": "中文一句：跟读这句时只盯这一点，具体怎么做"}]}';
 }
@@ -37,7 +39,7 @@ function shadowFocus(path, sents, i) {
       if (!items.length) throw new Error('AI 返回的格式不对，再试一次。');
       return list.map((s, k) => {
         const x = items[k] || {};
-        return { kind: FOCUS_KINDS[x.kind] ? x.kind : FOCUS_KEYS[(start + k) % 3], words: String(x.words || '').slice(0, 80), sound: String(x.sound || '').slice(0, 120), tip_zh: String(x.tip_zh || '').slice(0, 160) };
+        return { kind: FOCUS_KINDS[x.kind] ? x.kind : FOCUS_KEYS[(start + k) % FOCUS_KEYS.length], words: String(x.words || '').slice(0, 80), sound: String(x.sound || '').slice(0, 120), tip_zh: String(x.tip_zh || '').slice(0, 160) };
       });
     });
     p.catch(() => FOCUS.delete(key));

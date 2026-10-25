@@ -7,8 +7,10 @@
         让它说出你当时想找的说法（gapPromptPart），不额外花钱。只是停下来想内容、不是找词的，AI 会跳过。
   求助  AI 对话里点过「求助」的句子（chat.js chatHelp）。
   说错  AI 对话结束总结里最该改的句子（chat.js chatSummary 的 fixes）。
+  任务  AI 对话的任务没完成时，「这样说就能做到」的那句。
+  复述  4/3/2 第 3 遍里最值得换个说法的 1–3 句（app.js retellReview）。
 每次最多自动加 GAP_MAX 张，避免一次塞太多；加过的不重复加（addChunk 按英文去重）。
-卡片的 src 以「卡壳 · 」「求助 · 」「改错 · 」开头，在语块本里可以删。
+卡片的 src 以「卡壳 · 」「求助 · 」「改错 · 」「任务 · 」「复述 · 」开头，在语块本里可以删。
 */
 const GAP_MAX = 4;
 function gapPromptPart(stuck) {
@@ -19,7 +21,7 @@ function gapPromptPart(stuck) {
     + '{"en": "the natural phrase or short sentence they needed, under 15 words, one way of saying it (no alternatives with /)", "zh": "中文意思", "why_zh": "中文一句：卡在哪"}. '
     + 'Skip points where they were only deciding what to say next. Empty list if none.\n';
 }
-/* Add cards from a list of { en, zh }. kind: '卡壳' | '求助' | '改错'. Returns the English of the cards added. */
+/* Add cards from a list of { en, zh }. kind: '卡壳' | '求助' | '改错' | '任务' | '复述'. Returns the English of the cards added. */
 function gapIngest(list, kind, src) {
   const added = [];
   for (const g of (Array.isArray(list) ? list : [])) {

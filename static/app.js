@@ -72,7 +72,7 @@ const LEARNER = "The learner is a Chinese graduate student practising spoken Eng
   + "Their goal is to speak fluently at work and in daily life. They are NOT preparing for an exam: never mention exams, test scores, examiners or IELTS bands, and give advice for real conversations. Explanations for the learner are in simplified Chinese; English examples are natural, spoken and modern.";
 
 /* ================= state ================= */
-const S = { days: {}, lessons: {}, srs: {}, cards: {}, errs: {}, pron: { tests: [], drills: {} }, shadow: {}, repairs: [], prefs: { cur: 1, voice: '', ttsRate: 0.95, autoSpeak: true, level: 'normal', rate: 1, blind: false } };
+const S = { days: {}, lessons: {}, srs: {}, cards: {}, errs: {}, pron: { tests: [], drills: {} }, shadow: {}, repairs: [], chatTasks: [], prefs: { cur: 1, voice: '', ttsRate: 0.95, autoSpeak: true, level: 'normal', rate: 1, blind: false } };
 let LESSONS = [], N = 0, STATUS = {}, CFG = null;
 /* Nothing is saved until the stored progress has loaded: saving the empty starting state would wipe it. */
 let saveT, stateLoaded = false, saveWarned = false;
@@ -2031,7 +2031,7 @@ async function chatCall(userText) {
     if (userText != null && r.feedback?.better) { const last = CHAT.view[CHAT.view.length - 1]; if (last?.role === 'me') last.fb = { better: String(r.feedback.better), note: String(r.feedback.note_zh || '') }; }
     if (userText != null) chatMarkUnclear(r);
     // the history keeps the JSON shape: with plain-text replies in it the model drifts back to plain text after a turn
-    CHAT.turns.push({ role: 'assistant', content: JSON.stringify({ reply, reply_zh: String(r.reply_zh || ''), ...(r.unclear != null ? { unclear: !!r.unclear } : {}) }) });
+    CHAT.turns.push({ role: 'assistant', content: JSON.stringify({ reply, reply_zh: String(r.reply_zh || ''), ...(r.unclear != null ? { unclear: !!r.unclear } : {}), move: r.move ?? null }) });
     CHAT.view.push({ role: 'ai', en: reply, zh: String(r.reply_zh || '') });
     CHAT.busy = false; renderChat();
     if (S.prefs.autoSpeak) say(reply, $$('.msg.ai .speak-btn').pop());
@@ -2061,9 +2061,11 @@ function renderChat() {
   const tools = h('div', { class: 'chat-tools' },
     sceneGroup('学习和工作', Object.entries(SCEN).filter(([, v]) => !v.daily)),
     sceneGroup('日常生活', Object.entries(SCEN).filter(([, v]) => v.daily)));
+  if (!CHAT.started && !CHAT.task) CHAT.task = chatTask(CHAT.scen);
   if (CHAT.task) tools.append(h('div', { class: 'chat-task' }, h('div', { class: 'row' },
     h('span', { class: 'grow' }, h('b', { text: '你的任务：' }), CHAT.task[0]),
-    CHAT.started ? null : h('button', { class: 'btn ghost small', onclick: () => { CHAT.task = chatTask(CHAT.scen); renderChat(); } }, '换一个任务'))));
+    CHAT.started ? null : h('button', { class: 'btn ghost small', onclick: () => { CHAT.task = chatTask(CHAT.scen); renderChat(); } }, '换一个任务')),
+    h('p', { class: 'hint', text: '结束时 AI 会判断任务完成了没有。聊的时候别只回答：接一句对方的话，或者反问一句。' })));
   if (!CHAT.started && !CHAT.chunks.length) CHAT.chunks = recentChunks();
   if (CHAT.chunks.length) {
     const mineText = CHAT.view.filter(v => v.role === 'me').map(v => v.text).join(' ');
@@ -2098,6 +2100,7 @@ function renderChat() {
       log.append(h('div', { class: 'msg me' }, h('div', { class: 'bubble' }, wordify(v.text, { mine: true, src: '对话' })),
         v.unclear ? h('div', { class: 'chat-flag unclear', text: '对方没听懂，换个说法再说一次' }) : null,
         v.repair ? h('div', { class: 'chat-flag repair', text: '✓ 换了个说法，对方听懂了' }) : null,
+        v.move === 'asked' || v.move === 'reacted' ? h('div', { class: 'chat-flag repair', text: v.move === 'asked' ? '✓ 反问了对方' : '✓ 接了对方的话' }) : null,
         help,
         v.fb ? h('div', { class: 'fb' }, v.help ? h('div', {}, h('span', { class: 'tag', text: '求助' })) : null, h('div', { class: 'row' }, h('span', { class: 'better grow', text: v.fb.better }), sayBtn(v.fb.better), chunkBtn(v.fb.better, '', '对话 · ' + SCEN[CHAT.scen].label)), v.fb.note ? h('span', { class: 'small', text: v.fb.note }) : null) : null));
     }
@@ -2112,9 +2115,12 @@ function renderChat() {
     else {
       if (s.comment_zh) box.append(h('p', { text: esc(s.comment_zh) }));
       const st = s.stats;
-      if (st) box.append(h('p', { class: 'hint', text: fix === 'end'
-        ? '你说了 ' + st.msgs + ' 句；对方没听懂 ' + st.unclear + ' 次，你换说法后 ' + st.repair + ' 次让它听懂；求助 ' + st.help + ' 次。'
-        : '你说了 ' + st.msgs + ' 句。' }));
+      if (s.task) box.append(h('div', { class: 'fix' },
+        h('div', { class: 'row' }, h('span', { class: 'tag ' + (s.task.done === 'yes' ? 'good' : 'lamp'), text: { yes: '任务完成', partly: '任务完成了一部分', no: '任务没完成' }[s.task.done] }), h('span', { class: 'grow', text: CHAT.task?.[0] || '' })),
+        s.task.why_zh ? h('span', { class: 'hint', text: esc(s.task.why_zh) }) : null,
+        s.task.done !== 'yes' && s.task.better ? h('div', { class: 'row' }, h('span', { class: 'hint', text: '这样说就能做到：' }), h('b', { class: 'grow', text: esc(s.task.better) }), sayBtn(esc(s.task.better))) : null));
+      if (st) box.append(h('p', { class: 'hint', text: '你说了 ' + st.msgs + ' 句，其中反问对方 ' + (st.asked || 0) + ' 句、接对方的话 ' + (st.reacted || 0) + ' 句'
+        + (fix === 'end' ? '；对方没听懂 ' + st.unclear + ' 次，你换说法后 ' + st.repair + ' 次让它听懂；求助 ' + st.help + ' 次。' : '。') }));
       const fixes = (s.fixes || []).slice(0, 5);
       if (fixes.length) {
         box.append(h('h3', { text: '最该改的句子' }));
@@ -2137,6 +2143,7 @@ function renderChat() {
     ta.value = CHAT.draft; ta.oninput = () => { CHAT.draft = ta.value; };
     ta.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendChat(ta.value); } });
     const mineCount = CHAT.view.filter(v => v.role === 'me').length;
+    if (!CHAT.busy && !CHAT.summary && chatOnlyAnswering()) frag.push(h('p', { class: 'notice', text: '最近两句都只是在回答。下一句先接一句对方的话，或者反问一句，比如 Really? How come? / What about you?' }));
     frag.push(h('div', { class: 'composer' }, ta, h('div', { class: 'row' },
       micButton('chat', async blob => { CHAT.sttBusy = true; renderChat(); try { const t = await stt(blob, '', { kind: 'chat', line: SCEN[CHAT.scen].line || 'daily', meta: { scen: CHAT.scen } }); CHAT.draft = (CHAT.draft ? CHAT.draft + ' ' : '') + t; } catch (e) { alertBox(e.message); } CHAT.sttBusy = false; renderChat(); }),
       CHAT.sttBusy ? h('span', { class: 'thinking', text: '转写中…' }) : null,
@@ -2150,7 +2157,7 @@ function renderChat() {
 
 /* ================= 4/3/2 RETELL ================= */
 const PLANS = { full: [240, 180, 120], short: [120, 90, 60] };
-const RT = { topic: '', line: 'daily', plan: 'full', set: null, rounds: [] };
+const RT = { topic: '', line: 'daily', plan: 'full', set: null, rounds: [], review: null };
 async function recordRound(i) {
   if (Rec.isOn('rt')) { Rec.stop(); return; }
   if (!RT.topic.trim()) { alertBox('先写下要讲的内容。'); return; }
@@ -2161,11 +2168,30 @@ async function recordRound(i) {
   const r = { pending: true, url: URL.createObjectURL(blob) }; RT.rounds[i] = r; markDay('rt'); renderRetell();
   try {
     const j = await sttFull(blob, '', { kind: 'r432', line: RT.line, meta: { set: RT.set, round: i + 1, limit: lim, topic: RT.topic.trim().slice(0, 300) } });
-    Object.assign(r, { id: j.id, metrics: j.metrics, text: j.text });
+    Object.assign(r, { id: j.id, metrics: j.metrics, text: j.text, stuck: j.stuck || [] });
   } catch (e) { r.error = e.message; }
   r.pending = false; renderRetell();
+  if (i === 2 && RT.rounds.every(x => x?.text)) retellReview();
 }
-function resetRetell() { if (Rec.isOn('rt')) Rec.stop(); RT.rounds.forEach(r => r?.url && URL.revokeObjectURL(r.url)); RT.rounds = []; RT.set = null; }
+/* After the third round: its sentences most worth saying a better way become cards (看中文说整句), together with
+   where round 1 got stuck; errors go to the error log. One AI call per set. */
+async function retellReview() {
+  const set = RT.set, r1 = RT.rounds[0], r3 = RT.rounds[2], src = '4/3/2 · ' + RT.topic.trim().slice(0, 40);
+  RT.review = { loading: true }; renderRetell();
+  let rv;
+  try {
+    const j = await aiText(LEARNER + '\n\nThe learner told the same content three times, with less time each round (4/3/2). Topic: "' + RT.topic.trim().slice(0, 300) + '"\n'
+      + 'Speech-to-text of the third round (ignore punctuation and obvious mis-hearings):\n---\n' + r3.text.slice(0, 6000) + '\n---\nNo band score or rating of any kind.\n'
+      + 'JSON: {"comment_zh": "中文一两句：第三遍里说得好的一点", "lines": [{"said": "one of the learner\'s sentences from the third round, as they said it", "better": "how a fluent speaker would say the same thing, short enough to say in one breath", "zh": "中文意思"}]}. '
+      + 'lines: the 1–3 sentences most worth learning a better way to say, the ones a listener would find hardest first; skip sentences that were already natural.' + gapPromptPart(r1.stuck) + errPromptPart());
+    if (!j) throw new Error('AI 没有返回结果，等一会儿再试。');
+    j.errKeys = errIngest(j.errors, src);
+    j.cards = [...gapIngest((j.lines || []).map(x => ({ en: x.better, zh: x.zh })), '复述', src), ...gapIngest(j.gaps, '卡壳', src)];
+    updateBadge(); rv = j;
+  } catch (e) { rv = { error: e.message }; }
+  if (RT.set === set) { RT.review = rv; renderRetell(); }
+}
+function resetRetell() { if (Rec.isOn('rt')) Rec.stop(); RT.rounds.forEach(r => r?.url && URL.revokeObjectURL(r.url)); RT.rounds = []; RT.set = null; RT.review = null; }
 function renderRetell() {
   const root = $('#view-retell'); if (root.hidden) return;
   if (!RT.topic && N) RT.topic = promptText(LESSONS[S.prefs.cur - 1]);
@@ -2197,6 +2223,19 @@ function renderRetell() {
     frag.push(h('div', { class: 'next-cta' }, h('span', { text: '第 1 遍 → 第 3 遍：语速 ' + Math.round(a.wpm) + ' → ' + Math.round(c.wpm) + ' 词/分，连贯段 ' + a.mlr + ' → ' + c.mlr + ' 词，填充词 ' + a.fillers_per100 + ' → ' + c.fillers_per100 + ' 个/百词。' }),
       h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => { resetRetell(); renderRetell(); } }, '同一内容再来一组'), h('button', { class: 'btn ghost', onclick: () => { resetRetell(); RT.topic = ''; renderRetell(); } }, '换个内容'))));
   } else if (started && !recOn) frag.push(h('div', { class: 'row' }, h('button', { class: 'btn ghost', onclick: () => { resetRetell(); renderRetell(); } }, '放弃这一组，重新开始')));
+  const rv = RT.review;
+  if (rv) {
+    const box = h('div', { class: 'result' }, h('h3', { text: '第 3 遍里值得换个说法的句子' }));
+    if (rv.loading) box.append(h('p', { class: 'thinking', text: 'AI 在看第 3 遍' }));
+    else if (rv.error) box.append(h('p', { class: 'err', text: rv.error }), h('button', { class: 'btn ghost', onclick: retellReview }, '再试一次'));
+    else {
+      if (rv.comment_zh) box.append(h('p', { text: esc(rv.comment_zh) }));
+      for (const x of (rv.lines || []).slice(0, 3)) box.append(h('div', { class: 'fix' }, h('s', { text: esc(x.said) }),
+        h('div', { class: 'row' }, h('b', { class: 'grow', text: esc(x.better) }), sayBtn(esc(x.better))), x.zh ? h('span', { class: 'hint', text: esc(x.zh) }) : null));
+      put(box, gapNotice(rv.cards), errNotice(rv.errKeys));
+    }
+    frag.push(box);
+  }
   const hist = h('div', { class: 'section' });
   frag.push(hist);
   root.replaceChildren(...frag);
@@ -2534,7 +2573,7 @@ async function renderSettings() {
     const [ls, st] = await Promise.all([api('/api/lessons'), api('/api/status')]);
     LESSONS = ls.lessons; N = LESSONS.length; STATUS = st;
     await Promise.all([
-      api('/api/state').then(d => { for (const k of ['days', 'lessons', 'srs', 'cards', 'errs', 'pron', 'shadow', 'repairs']) if (d[k]) S[k] = d[k]; Object.assign(S.prefs, d.prefs || {}); stateLoaded = true; })
+      api('/api/state').then(d => { for (const k of ['days', 'lessons', 'srs', 'cards', 'errs', 'pron', 'shadow', 'repairs', 'chatTasks']) if (d[k]) S[k] = d[k]; Object.assign(S.prefs, d.prefs || {}); stateLoaded = true; })
         .catch(e => alertBox('读不到之前的进度（' + e.message + '），这次练习不会保存。按 ⌘R 重新载入。')),
       loadRecs()]);
   } catch (e) { $('#view-today').replaceChildren(h('p', { class: 'err', text: e.message })); return; }

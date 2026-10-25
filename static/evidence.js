@@ -89,6 +89,7 @@ function milestones(recs) {
     { id: 'chat30', title: '在 AI 对话里一口气说 30 个词以上', how: 'AI 对话里有一轮回答说满 30 词，不是只答一两句。', rec: first(r => r.kind === 'chat' && r.metrics.words >= 30) },
     { id: 'fluent', title: '说 100 词以上，每百词的 um / uh 不超过 2 个', how: '一段 100 词以上的自由说话，填充词每百词 ≤ 2。', rec: mono.find(r => r.metrics.words >= 100 && r.metrics.fillers_per100 <= 2) || null },
     { id: 'chunk', title: '第一次在自由说话里用出学过的语块', how: '语块本里的语块，学了之后在开口说、对话或自言自语里自己说出来。', rec: uses[0]?.rec || null, note: uses[0] ? '「' + uses[0].en + '」' : '' },
+    { id: 'task', title: '在 AI 对话里完成一个任务', how: 'AI 对话的每个场景都有一个任务，结束总结里判定「任务完成」。', rec: null, at: (S.chatTasks || []).find(x => x.done === 'yes')?.t ?? null, note: (S.chatTasks || []).find(x => x.done === 'yes')?.task ? '（' + (S.chatTasks || []).find(x => x.done === 'yes').task + '）' : '' },
     { id: 'repair10', title: '点评前自己改对 10 处', how: '开口说点评前的「先自己改一处」，累计自己改对 10 次。', rec: null, at: fixed.length >= 10 ? fixed[9].t : null },
   ];
 }
