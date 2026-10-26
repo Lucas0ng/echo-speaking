@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>回声 · Echo</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="rail">
+    <div class="brand">
+      <h1><img class="logo" src="icon.svg" alt="" width="26" height="26">回声 <span class="en">Echo</span></h1>
+      <p id="subline">加载中…</p>
+    </div>
+    <div class="habit" aria-label="练习习惯">
+      <div class="week" id="weekDots" aria-label="最近 7 天"></div>
+      <p id="habitLine"></p>
+    </div>
+    <nav class="nav" role="tablist">
+      <a href="#today" data-tab="today">今天</a>
+      <a href="#mine" data-tab="mine">我的素材</a>
+      <a href="#retell" data-tab="retell">4/3/2 复述</a>
+      <a href="#solo" data-tab="solo">自言自语</a>
+      <a href="#chunks" data-tab="chunks">语块本<span class="badge" id="dueBadge" hidden></span></a>
+      <a href="#errors" data-tab="errors">错误本<span class="badge" id="errBadge" hidden></span></a>
+      <a href="#pron" data-tab="pron">发音</a>
+      <a href="#chat" data-tab="chat">AI 对话</a>
+      <a href="#progress" data-tab="progress">进步</a>
+      <a href="#help" data-tab="help">怎么用</a>
+      <a href="#settings" data-tab="settings">设置</a>
+    </nav>
+    <p class="foot" id="railFoot"></p>
+  </aside>
+  <div class="main">
+    <button class="page-help" id="pageHelp" aria-label="这一页怎么用" aria-expanded="false">?</button>
+    <main data-view="today" id="view-today"></main>
+    <main data-view="mine" id="view-mine" hidden></main>
+    <main data-view="retell" id="view-retell" hidden></main>
+    <main data-view="solo" id="view-solo" hidden></main>
+    <main data-view="chunks" id="view-chunks" hidden></main>
+    <main data-view="errors" id="view-errors" hidden></main>
+    <main data-view="pron" id="view-pron" hidden></main>
+    <main data-view="chat" id="view-chat" hidden></main>
+    <main data-view="progress" id="view-progress" hidden></main>
+    <main data-view="help" id="view-help" hidden></main>
+    <main data-view="settings" id="view-settings" hidden></main>
+  </div>
+</div>
+<script src="chart.js"></script>
+<script src="errors.js"></script>
+<script src="words.js"></script>
+<script src="sentences.js"></script>
+<script src="minpairs.js"></script>
+<script src="pron.js"></script>
+<script src="pitch.js"></script>
+<script src="review.js"></script>
+<script src="gaps.js"></script>
+<script src="nouns.js"></script>
+<script src="solo.js"></script>
+<script src="chat.js"></script>
+<script src="guide.js"></script>
+<script src="evidence.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

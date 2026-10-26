@@ -27,7 +27,11 @@
 - **DeepSeek API key（必需）**：句型讲解、点评和 AI 对话都靠它。在 [platform.deepseek.com](https://platform.deepseek.com) 注册、充值几块钱、创建 key。按量付费，每天练 15 分钟大约 ¥0.1–0.3。也可以改用智谱 GLM。
 - **阿里云百炼 API key（可选）**：「AI 听发音」用 Qwen-Omni 听你的录音点评发音。不填，其他功能照常用。
 
+**Windows 版**在 [`windows/`](windows/) 文件夹，安装方法见[那里的 README](windows/README.md)。
+
 ## 安装
+
+**最省事的办法**：复制本仓库的网址 https://github.com/Lucas0ng/echo-speaking 发给豆包，打开「工作模式」，让豆包帮你在本地部署。想自己动手，照下面的步骤。
 
 1. 下载代码：
 

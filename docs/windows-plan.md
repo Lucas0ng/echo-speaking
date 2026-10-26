@@ -1,6 +1,7 @@
 # Windows 版方案（草稿）
 
-> **状态：方案草稿，未开工。** 2026-10-25 定稿前别动代码；开工前先把「待定决策」里的问题问清楚。
+> **状态（2026-10-26）：第一期已合入，放在仓库的 `windows/` 文件夹，是一份独立副本；根目录的 Mac 版不动。** 下面 §1–§8 是当初的方案，记录见 §9。
+> 用户的决定：Windows 版单独一个文件夹，Mac 端保持原样；Windows 用新图标（墨色底 + 三根音柱），Mac 保留陶土橙图标。
 > 读者是接手的 AI 会话：先读本文件，再读 `app.py` 里下面点名的函数。行号会漂移，以函数名为准（写本文时基于 main `2a77ea3`）。
 
 ## 0. 一句话
@@ -138,4 +139,6 @@ def stt(audio: np.ndarray, words: bool = False, prompt: str | None = None) -> di
 
 ## 9. 记录
 
-（开工后在这里记：实测数据、对比结果、踩到的坑、决定。）
+- 2026-10-26：Windows 版代码由用户在 Windows 机器上做好（zip），Claude 审查后合入 `windows/`。合入时修了：`guide.js` 和 `app.js` 重复声明全局 `KEY`，页面直接报 SyntaxError 打不开；连不上服务的提示改成指向 start.bat；Mac 上自定义的 `whisper_model` 继续生效；DeepSeek 控制台链接改回 platform.deepseek.com；自检加 30 秒真实课程音频计时。
+- Mac 上实测：新的 `stt()` 走 mlx，和旧代码逐词、逐时间戳一致。faster-whisper / CUDA 路径还没在真 Windows 上验证（§5.3 手测清单未做）。
+- 维护：`windows/` 是整份副本，Mac 版以后改功能，Windows 版不会自动跟上，需要手动同步。

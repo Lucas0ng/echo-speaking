@@ -1,0 +1,13 @@
+# 回声 · Echo 的 Python 依赖。start.command / start.bat 第一次运行时自动安装。
+# Apple 芯片 Mac 用 mlx-whisper；Windows 和其他平台用 faster-whisper。
+fastapi==0.159.1
+uvicorn==0.54.0
+python-multipart==0.0.32
+httpx==0.28.1
+numpy==2.5.4
+av==19.0.2
+mlx-whisper==0.4.3; sys_platform == "darwin" and platform_machine == "arm64"
+faster-whisper==1.2.1; sys_platform != "darwin" or platform_machine != "arm64"
+nvidia-cublas-cu12==12.9.2.10; sys_platform == "win32"
+nvidia-cudnn-cu12==9.27.0.42; sys_platform == "win32"
+nvidia-cuda-runtime-cu12==12.9.79; sys_platform == "win32"
