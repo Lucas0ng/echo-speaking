@@ -333,6 +333,27 @@ function rbNote(text) {
   return h('div', { class: 'rb-note' }, String(text).split('\n').filter(x => x.trim()).map(line =>
     h('p', null, ...line.split('**').map((part, i) => (i % 2 ? h('b', { text: part }) : part)))));
 }
+/* English the learner may look into: every word opens the dictionary card, and 拆句 shows the sentence analysis
+   (the same two tools as the shadowing page). Analyses are kept per sentence for the session. */
+const RB_ANA = {};
+function rbAnaBtn(sentence) {
+  const a = RB_ANA[sentence];
+  return h('button', { class: 'btn ghost', disabled: a?.busy || null, onclick: async () => {
+    if (a && !a.busy) { a.open = !a.open; renderCourse(); return; }
+    const st = RB_ANA[sentence] = { busy: true, open: true };
+    RB.busy = true; RB.busyLabel = '拆句中…'; renderCourse();
+    try { st.item = (await analyzeSentences([sentence]))[0]; } catch (e) { st.error = e?.message || String(e); }
+    st.busy = false; RB.busy = false; RB.busyLabel = ''; renderCourse();
+  } }, a?.busy ? '拆句中…' : a?.open ? '收起拆句' : '拆句');
+}
+function rbAnaView(sentence) {
+  const a = RB_ANA[sentence];
+  if (!a || a.busy || !a.open) return null;
+  return a.error ? h('p', { class: 'err', text: a.error }) : analysisView(a.item, { mine: false, src: 'Rebirth ' + (rbUnits()[rbNorm().unit]?.id || '') });
+}
+function rbEn(text) {
+  return [h('p', { class: 'rb-en' }, wordify(text, { src: 'Rebirth ' + (rbUnits()[rbNorm().unit]?.id || '') })), h('div', { class: 'row' }, sayBtn(text, '朗读'), rbAnaBtn(text)), rbAnaView(text)].filter(Boolean);
+}
 function rbStepHead(tag, hint) {
   return h('div', { class: 'rb-step-head' }, h('span', { class: 'tag', text: tag }), hint ? h('span', { class: 'hint', text: hint }) : null);
 }
@@ -409,7 +430,7 @@ function rbRecallPanel() {
     h('p', { class: 'rb-cue', text: card.zh || '（这张卡没有中文提示）' }),
   ];
   if (r) {
-    kids.push(h('p', { class: 'rb-en', text: card.en }));
+    kids.push(...rbEn(card.en));
     kids.push(diffView(card.en, r.text, r.words));
     kids.push(h('div', { class: 'row' },
       h('span', { class: 'tag ' + (r.grade >= 2 ? 'good' : 'lamp'), text: RB_GRADE[r.grade] }),
@@ -519,7 +540,7 @@ function rbPatternPanel() {
     kids.push(h('p', { class: 'rb-hint-en', text: item.cue_en }));
   }
   if (r) {
-    kids.push(h('p', { class: 'rb-en', text: item.en || '' }));
+    kids.push(...rbEn(item.en || ''));
     kids.push(diffView(item.en || '', r.text, r.words));
     if (sentence && RB.pass === 0) {
       kids.push(h('div', { class: 'row' },
@@ -615,8 +636,9 @@ function rbDialogView() {
   const rows = RB.use?.history || [];
   return h('div', { class: 'rb-dialog' }, rows.map(m => h('div', { class: 'rb-turn ' + (m.role === 'assistant' ? 'ai' : 'me') },
     h('span', { class: 'rb-who', text: m.role === 'assistant' ? 'AI' : '你' }),
-    h('p', { text: m.text }),
-    m.role === 'assistant' ? sayBtn(m.text, '再听一遍') : null)));
+    m.role === 'assistant' ? h('p', null, wordify(m.text, { src: 'Rebirth ' + (rbUnits()[rbNorm().unit]?.id || '') })) : h('p', { text: m.text }),
+    m.role === 'assistant' ? h('div', { class: 'row' }, sayBtn(m.text, '再听一遍'), rbAnaBtn(m.text)) : null,
+    m.role === 'assistant' ? rbAnaView(m.text) : null)));
 }
 
 function rbSlipView(unit) {
@@ -650,7 +672,7 @@ function rbUsePanel() {
   if (u.slip && u.slip.resolved) {
     kids.push(h('div', { class: 'notice rb-fix' },
       h('p', { class: 'hint', text: '更自然的说法' }),
-      h('p', { class: 'rb-en', text: u.slip.fix }),
+      ...rbEn(u.slip.fix),
       h('p', { class: 'hint', text: '已记入语块本 · ' + (u.slip.hint_zh || '') })));
   }
   if (u.slip && !u.slip.resolved) {
@@ -662,6 +684,7 @@ function rbUsePanel() {
       micButton('rb-use', rbGuard(blob => rbUseSay(blob, unit))),
       u.n >= 2 ? h('button', { class: 'btn primary', onclick: () => rbAdvanceSeg() }, '进下一段') : null));
   }
+  if (!(u.slip && !u.slip.resolved)) kids.push(rbHelpView(unit));
   if (u.n < 2 && RB.timeUp) {
     kids.push(h('p', { class: 'hint warn', text: '时间到，但还要再用上今天的句型（' + u.n + ' / 2）。' }));
   }
@@ -740,6 +763,41 @@ async function rbUseRetry(blob, unit) {
     if (s.ok) say(s.fix);
   }
   renderCourse();
+}
+
+/* 卡住了: the learner types what they want to say (Chinese or half a sentence) and gets one short way to say it.
+   They still have to say it themselves; the sentence goes into the chunk book. */
+function rbHelpView(unit) {
+  const u = RB.use;
+  const box = h('div', { class: 'rb-help' });
+  if (u.help) {
+    box.append(h('p', { class: 'hint', text: '可以这么说（看完自己说出来）：' }), ...rbEn(u.help.better),
+      h('p', { class: 'hint', text: [u.help.zh, u.help.note].filter(Boolean).join(' · ') }));
+  }
+  const input = h('input', { type: 'text', class: 'rb-help-input', placeholder: '卡住了？在这里写想说的话，中文或半句英文都行', value: u.helpDraft || '' });
+  input.oninput = () => { u.helpDraft = input.value; };
+  const ask = async () => {
+    const want = (u.helpDraft || '').trim();
+    if (!want || RB.busy) return;
+    RB.busy = true; RB.busyLabel = '在想怎么说…'; renderCourse();
+    try {
+      const lastAi = [...u.history].reverse().find(m => m.role === 'assistant');
+      const j = await aiText(LEARNER + '\n\nIn a role-play (' + (unit?.task?.role || '') + '), the partner said: "' + (lastAi?.text || '') + '"\n'
+        + 'The learner is stuck and wrote what they want to say (Chinese, or broken English):\n"' + want + '"\n'
+        + 'Today\'s target pattern is "' + (unit?.pattern?.frame || '') + '". Use it if it fits what they mean; do not force it.\n'
+        + 'Give the simple, natural spoken English for what they meant, short enough to say right away.\n'
+        + 'JSON: {"better": "...", "zh": "这句英文的中文意思", "note_zh": "中文一句：关键的词或说法"}', { think: false });
+      if (!j?.better) throw new Error('AI 没给出说法，再试一次。');
+      u.help = { better: String(j.better), zh: String(j.zh || ''), note: String(j.note_zh || '') };
+      u.helpDraft = '';
+      gapIngest([{ en: u.help.better, zh: u.help.zh || want }], '求助', 'Rebirth ' + (unit?.id || ''));
+      updateBadge();
+    } catch (e) { alertBox(e?.message || String(e)); }
+    RB.busy = false; RB.busyLabel = ''; renderCourse();
+  };
+  input.onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) ask(); };
+  box.append(h('div', { class: 'row' }, input, h('button', { class: 'btn', onclick: ask }, '怎么说')));
+  return box;
 }
 
 /* ---------- 快 ---------- */
