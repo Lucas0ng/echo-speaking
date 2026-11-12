@@ -115,14 +115,14 @@ Rules for your reply:
 After each learner turn, return JSON only:
 {
   "reply": "your next line in role",
-  "used": true or false,   // true only if this turn contains a correct sentence built on the target pattern that is not one of the example sentences
+  "used": true or false,   // true if this turn contains a sentence built on the target pattern whose wording is not identical to an example sentence; a different object or detail is enough
   "slip": null or { "said": "the learner's faulty sentence", "hint_zh": "用中文提示哪里不对，不给出正确说法，不超过 25 个字", "fix": "the corrected sentence" },
   "done": true or false    // true when the learner's goal has been reached
 }
-Report at most one slip per turn, and only one that would confuse a listener or that breaks the target pattern. Small article or plural mistakes that recognition may have caused are not slips.
+Report at most one slip per turn. A slip is either (a) a mistake that would confuse a listener, or (b) the learner saying something the target pattern is made for but in another, cruder way: then hint_zh nudges them to use today's pattern and fix is their sentence rebuilt on the pattern. Small article or plural mistakes that recognition may have caused are not slips.
 ```
 
-对话历史按轮传。重说之后判对错：把重说的识别结果和 `fix` 用 `align` 比，分数 ≥ 0.8 算改对。
+对话历史按轮传；AI 之前的回话要包成 `{"reply": "…"}` 再传回去，直接传纯文本的话模型从第二轮起就不再返回 JSON（实测）。重说之后判对错：把重说的识别结果和 `fix` 用 `align` 比，分数 ≥ 0.8 算改对。
 
 ## 5. 界面接入
 

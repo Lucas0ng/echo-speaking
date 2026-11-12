@@ -1,0 +1,958 @@
+{
+  "version": 1,
+  "total": 3000,
+  "milestone": 30,
+  "stages": [
+    {
+      "id": 1,
+      "name": "发声",
+      "from": 2997,
+      "to": 2880,
+      "can": "A1–A2 的句子不假思索"
+    },
+    {
+      "id": 2,
+      "name": "成句",
+      "from": 2880,
+      "to": 2400,
+      "can": "日常的事都说得出"
+    },
+    {
+      "id": 3,
+      "name": "成段",
+      "from": 2400,
+      "to": 1700,
+      "can": "连着讲两分钟，能讨论"
+    },
+    {
+      "id": 4,
+      "name": "自如",
+      "from": 1700,
+      "to": 800,
+      "can": "陌生话题也接得住"
+    },
+    {
+      "id": 5,
+      "name": "拓展",
+      "from": 800,
+      "to": 0,
+      "can": "站稳之后继续往上走"
+    }
+  ],
+  "units": [
+    {
+      "id": "s1-u01",
+      "stage": 1,
+      "title": "点单",
+      "can": "能在店里点单，并回答店员的追问。",
+      "sound": {
+        "title": "词重音",
+        "note_zh": "多音节词里有一个音节读得更响、更长、更高，其余音节轻而短。重音放错，对方可能听不出你说的是哪个词。先记住单词的重音位置，再把它放进句子里。",
+        "link": {
+          "label": "Rachel's English：Word Stress",
+          "url": "https://rachelsenglish.com/"
+        },
+        "items": [
+          {
+            "text": "coffee",
+            "mark": "COF-fee"
+          },
+          {
+            "text": "banana",
+            "mark": "ba-NA-na"
+          },
+          {
+            "text": "ticket",
+            "mark": "TICK-et"
+          },
+          {
+            "text": "I'd like a coffee, please.",
+            "mark": "I'd LIKE a COF-fee, PLEASE."
+          }
+        ]
+      },
+      "pattern": {
+        "frame": "I'd like ..., please.",
+        "note_zh": "点东西、提要求时最自然的说法，比 I want 客气。I'd 读成一个音节 /aɪd/，后面直接跟名词；please 放句尾，语气更软。",
+        "sentences": [
+          {
+            "cue_zh": "我要一杯咖啡。",
+            "cue_en": "coffee",
+            "en": "I'd like a coffee, please."
+          },
+          {
+            "cue_zh": "两位，麻烦给张桌子。",
+            "cue_en": "table / two",
+            "en": "I'd like a table for two, please."
+          },
+          {
+            "cue_zh": "我要鸡肉那份。",
+            "cue_en": "chicken",
+            "en": "I'd like the chicken, please."
+          },
+          {
+            "cue_zh": "我想要点水。",
+            "cue_en": "some water",
+            "en": "I'd like some water, please."
+          },
+          {
+            "cue_zh": "我想试试这件。",
+            "cue_en": "try / this one",
+            "en": "I'd like to try this one, please."
+          },
+          {
+            "cue_zh": "我要靠窗的座位。",
+            "cue_en": "window seat",
+            "en": "I'd like a window seat, please."
+          }
+        ],
+        "swaps": [
+          {
+            "cue_zh": "我要两张票。",
+            "cue_en": "two tickets",
+            "en": "I'd like two tickets, please."
+          },
+          {
+            "cue_zh": "我想订一间今晚的房。",
+            "cue_en": "room / tonight",
+            "en": "I'd like a room for tonight, please."
+          },
+          {
+            "cue_zh": "我要小份的。",
+            "cue_en": "small",
+            "en": "I'd like a small one, please."
+          }
+        ]
+      },
+      "task": {
+        "scene_zh": "你在咖啡店柜台点单。要一杯饮料和一样吃的，店员会追问大小和堂食还是外带。",
+        "role": "You are a barista at a busy coffee shop. Take the customer's order. Ask about the size and whether it is for here or to go.",
+        "opener": "Hi there! What can I get for you today?",
+        "goal_zh": "用 I'd like ... 点一杯饮料和一样吃的，并回答大小、堂食还是外带两个问题。"
+      }
+    },
+    {
+      "id": "s1-u02",
+      "stage": 1,
+      "title": "能不能",
+      "can": "能客气地问对方能不能做一件事。",
+      "sound": {
+        "title": "句重音",
+        "note_zh": "一句话里，名词、动词、形容词这些实词要加重；冠词、介词、be 动词一带而过。别每个词一样重，把重的词托起来，对方才抓得住重点。",
+        "link": {
+          "label": "BBC：句子重音与节奏",
+          "url": "https://www.bbc.co.uk/learningenglish/english/features/pronunciation/tims-pronunciation-workshop-ep-14"
+        },
+        "items": [
+          {
+            "text": "today",
+            "mark": "to-DAY"
+          },
+          {
+            "text": "a table",
+            "mark": "a TA-ble"
+          },
+          {
+            "text": "Can I have a coffee?",
+            "mark": "Can I HAVE a COF-fee?"
+          },
+          {
+            "text": "Can I sit here?",
+            "mark": "Can I SIT HERE?"
+          }
+        ]
+      },
+      "pattern": {
+        "frame": "Can I ...?",
+        "note_zh": "Can I ...? 用来客气地问能不能做某事，后面直接跟动词原形。句尾升调，等对方回答。",
+        "sentences": [
+          {
+            "cue_zh": "我能坐这儿吗？",
+            "cue_en": "sit / here",
+            "en": "Can I sit here?"
+          },
+          {
+            "cue_zh": "给我来杯咖啡好吗？",
+            "cue_en": "coffee",
+            "en": "Can I have a coffee, please?"
+          },
+          {
+            "cue_zh": "可以刷卡吗？",
+            "cue_en": "pay / card",
+            "en": "Can I pay by card?"
+          },
+          {
+            "cue_zh": "菜单能给我看看吗？",
+            "cue_en": "menu",
+            "en": "Can I see the menu?"
+          },
+          {
+            "cue_zh": "能借你手机用一下吗？",
+            "cue_en": "borrow / phone",
+            "en": "Can I borrow your phone?"
+          },
+          {
+            "cue_zh": "我可以晚点到吗？",
+            "cue_en": "a little late",
+            "en": "Can I come in a little late?"
+          }
+        ],
+        "swaps": [
+          {
+            "cue_zh": "能给我一杯水吗？",
+            "cue_en": "water",
+            "en": "Can I have some water?"
+          },
+          {
+            "cue_zh": "我能用一下你的笔吗？",
+            "cue_en": "your pen",
+            "en": "Can I use your pen?"
+          },
+          {
+            "cue_zh": "我能换到里面那张桌子吗？",
+            "cue_en": "move / table inside",
+            "en": "Can I move to that table inside?"
+          }
+        ]
+      },
+      "task": {
+        "scene_zh": "你在餐厅门口，想问清能不能给你一张桌子、能不能坐窗边、能不能刷卡。服务员会回答并反问你几位。",
+        "role": "You are the host at a small restaurant. Answer the customer's questions and ask how many people are in their party.",
+        "opener": "Good evening! Welcome. How many in your party?",
+        "goal_zh": "用 Can I ...? 问清三件事：能不能给你一张桌子、能不能坐窗边、能不能刷卡。"
+      }
+    },
+    {
+      "id": "s1-u03",
+      "stage": 1,
+      "title": "说计划",
+      "can": "能说出自己的计划，并回答时间和方式的问题。",
+      "sound": {
+        "title": "弱读",
+        "note_zh": "to、a、the、can、and 这些小词在句子里要读得又快又轻：to 像 /tə/，a 像 /ə/，can 像 /kən/。别把小词一个个读清楚，轻下来，句子才有英语的节奏。",
+        "link": {
+          "label": "BBC：弱读与功能词",
+          "url": "https://www.bbc.co.uk/learningenglish/english/features/pronunciation/tims-pronunciation-workshop-ep-5"
+        },
+        "items": [
+          {
+            "text": "to",
+            "mark": "tə"
+          },
+          {
+            "text": "a cup of tea",
+            "mark": "a CUP əv TEA"
+          },
+          {
+            "text": "can",
+            "mark": "kən"
+          },
+          {
+            "text": "I'm going to call her tonight.",
+            "mark": "I'm GO-ing tə CALL ər tə-NIGHT."
+          }
+        ]
+      },
+      "pattern": {
+        "frame": "I'm going to ...",
+        "note_zh": "说打算做的事，用 be going to + 动词原形，比 will 更像已经想好了。口语里 going to 常读得快而轻。",
+        "sentences": [
+          {
+            "cue_zh": "我今晚给她打电话。",
+            "cue_en": "call her / tonight",
+            "en": "I'm going to call her tonight."
+          },
+          {
+            "cue_zh": "我打算坐火车去。",
+            "cue_en": "train",
+            "en": "I'm going to take the train."
+          },
+          {
+            "cue_zh": "我们下个月搬家。",
+            "cue_en": "move / next month",
+            "en": "We're going to move next month."
+          },
+          {
+            "cue_zh": "我打算在家做饭。",
+            "cue_en": "cook / at home",
+            "en": "I'm going to cook at home."
+          },
+          {
+            "cue_zh": "他要开始一份新工作。",
+            "cue_en": "he / new job",
+            "en": "He's going to start a new job."
+          },
+          {
+            "cue_zh": "我明天打算在家办公。",
+            "cue_en": "work from home / tomorrow",
+            "en": "I'm going to work from home tomorrow."
+          }
+        ],
+        "swaps": [
+          {
+            "cue_zh": "我打算去看个医生。",
+            "cue_en": "doctor",
+            "en": "I'm going to see a doctor."
+          },
+          {
+            "cue_zh": "我们打算住两晚。",
+            "cue_en": "two nights",
+            "en": "We're going to stay two nights."
+          },
+          {
+            "cue_zh": "她今晚要学习。",
+            "cue_en": "she / study",
+            "en": "She's going to study tonight."
+          }
+        ]
+      },
+      "task": {
+        "scene_zh": "朋友问你周末有什么安排。你说要做的事，朋友会追问什么时候、怎么去、和谁一起。",
+        "role": "You are the learner's friend. Ask about weekend plans, then follow up with questions about when, how, and who with.",
+        "opener": "Hey! Any plans for the weekend?",
+        "goal_zh": "用 I'm going to ... 说出周末要做的一件事，并回答时间、怎么去两个追问。"
+      }
+    },
+    {
+      "id": "s1-u04",
+      "stage": 1,
+      "title": "问有没有",
+      "can": "能问对方有没有某样东西。",
+      "sound": {
+        "title": "连读",
+        "note_zh": "前一个词以辅音结尾、后一个词以元音开头时，把那个辅音滑到后面去，听起来像连成一个词。比如 take it 像 ta-kit，turn it on 像 tur-ni-ton。",
+        "link": {
+          "label": "BBC：连读",
+          "url": "https://www.bbc.co.uk/learningenglish/english/features/pronunciation/tims-pronunciation-workshop-ep-1"
+        },
+        "items": [
+          {
+            "text": "check it",
+            "mark": "CHECK‿it"
+          },
+          {
+            "text": "turn it on",
+            "mark": "TURN‿it‿ON"
+          },
+          {
+            "text": "pick it up",
+            "mark": "PICK‿it‿UP"
+          },
+          {
+            "text": "Do you have a minute?",
+            "mark": "Do you HAVE‿a MIN-ute?"
+          }
+        ]
+      },
+      "pattern": {
+        "frame": "Do you have ...?",
+        "note_zh": "问对方有没有某样东西，用 Do you have ...? 后面直接跟名词。有就说 Yes, I do，没有就说 Sorry, I don't。",
+        "sentences": [
+          {
+            "cue_zh": "现在有空吗？",
+            "cue_en": "minute",
+            "en": "Do you have a minute?"
+          },
+          {
+            "cue_zh": "有饮用水吗？",
+            "cue_en": "water",
+            "en": "Do you have any water?"
+          },
+          {
+            "cue_zh": "这件有中号吗？",
+            "cue_en": "this / medium",
+            "en": "Do you have this in medium?"
+          },
+          {
+            "cue_zh": "有手机充电器吗？",
+            "cue_en": "charger",
+            "en": "Do you have a phone charger?"
+          },
+          {
+            "cue_zh": "周五有空吗？",
+            "cue_en": "time / Friday",
+            "en": "Do you have time on Friday?"
+          },
+          {
+            "cue_zh": "有城市地图吗？",
+            "cue_en": "map / city",
+            "en": "Do you have a map of the city?"
+          }
+        ],
+        "swaps": [
+          {
+            "cue_zh": "有四人的位子吗？",
+            "cue_en": "table / four",
+            "en": "Do you have a table for four?"
+          },
+          {
+            "cue_zh": "有牛奶吗？",
+            "cue_en": "milk",
+            "en": "Do you have any milk?"
+          },
+          {
+            "cue_zh": "十块钱能找开吗？",
+            "cue_en": "change / ten dollars",
+            "en": "Do you have change for ten dollars?"
+          }
+        ]
+      },
+      "task": {
+        "scene_zh": "你在药店，一直咳嗽，想买止咳药。药剂师会问症状，你可以问有没有别的选择、怎么吃。",
+        "role": "You are a pharmacist. Ask about the customer's symptoms, then answer questions about what you have and how to take it.",
+        "opener": "Hi, how can I help you today?",
+        "goal_zh": "用 Do you have ...? 问出至少两种药，并问清一天吃几次。"
+      }
+    },
+    {
+      "id": "s1-u05",
+      "stage": 1,
+      "title": "说我需要",
+      "can": "能说出自己必须做的事，并问清条件。",
+      "sound": {
+        "title": "断句",
+        "note_zh": "长句子别一口气冲完，按意思切成几小组，每组一口气，组间停一小下。停错地方会把两个不该连的词连到一起，对方就要猜。",
+        "link": {
+          "label": "BBC：Tim's Pronunciation Workshop（30 集汇总）",
+          "url": "https://www.bbc.co.uk/learningenglish/english/features/pronunciation/tims-pronunciation-workshop-ep-30"
+        },
+        "items": [
+          {
+            "text": "I need to call",
+            "mark": "I NEED to CALL"
+          },
+          {
+            "text": "my boss before six",
+            "mark": "my BOSS / before SIX"
+          },
+          {
+            "text": "I need to go home and charge my phone.",
+            "mark": "I NEED to GO HOME / and CHARGE my PHONE."
+          },
+          {
+            "text": "I need to call my boss before six.",
+            "mark": "I NEED to CALL my BOSS / before SIX."
+          }
+        ]
+      },
+      "pattern": {
+        "frame": "I need to ...",
+        "note_zh": "说必须做的事，用 I need to + 动词原形，比 must 口语，意思和 have to 差不多。否定是 I don't need to。",
+        "sentences": [
+          {
+            "cue_zh": "我六点前得给老板打个电话。",
+            "cue_en": "call / boss / before six",
+            "en": "I need to call my boss before six."
+          },
+          {
+            "cue_zh": "我得买点牛奶。",
+            "cue_en": "buy / milk",
+            "en": "I need to buy some milk."
+          },
+          {
+            "cue_zh": "我们得早点走。",
+            "cue_en": "we / leave early",
+            "en": "We need to leave early."
+          },
+          {
+            "cue_zh": "我得去看医生。",
+            "cue_en": "see a doctor",
+            "en": "I need to see a doctor."
+          },
+          {
+            "cue_zh": "你得在这儿签字。",
+            "cue_en": "you / sign here",
+            "en": "You need to sign here."
+          },
+          {
+            "cue_zh": "我得给手机充电。",
+            "cue_en": "charge / phone",
+            "en": "I need to charge my phone."
+          }
+        ],
+        "swaps": [
+          {
+            "cue_zh": "今天得把这事做完。",
+            "cue_en": "finish / today",
+            "en": "I need to finish this today."
+          },
+          {
+            "cue_zh": "我得去接孩子。",
+            "cue_en": "pick up / kids",
+            "en": "I need to pick up my kids."
+          },
+          {
+            "cue_zh": "我得交房租。",
+            "cue_en": "pay / rent",
+            "en": "I need to pay the rent."
+          }
+        ]
+      },
+      "task": {
+        "scene_zh": "你在看一套出租房。房东问你觉得怎么样、什么时候能搬，你要问清房租含不含水电，并说搬进来之前要做的事。",
+        "role": "You are the landlord showing a small apartment. Answer the learner's questions about rent and utilities, ask when they want to move in, and ask if there is anything they need to do before moving in.",
+        "opener": "Hi! Come on in. So, what do you think of the place?",
+        "goal_zh": "用 I need to ... 说出至少两件搬进来之前要做的事，并问清房租含不含水电。"
+      }
+    },
+    {
+      "id": "s1-u06",
+      "stage": 1,
+      "title": "问要多久",
+      "can": "能问清做一件事要多久。",
+      "sound": {
+        "title": "语调",
+        "note_zh": "陈述句句尾往下掉，听着像说完了；yes/no 问句句尾往上挑，等着对方回答；what、how 开头的特殊问句句尾往下掉。同一句话，调子不同，意思就不一样。↗ 表示升调，↘ 表示降调。",
+        "link": {
+          "label": "Rachel's English：Intonation（语调）",
+          "url": "https://rachelsenglish.com/"
+        },
+        "items": [
+          {
+            "text": "Really?",
+            "mark": "REAL-ly? ↗"
+          },
+          {
+            "text": "It takes ten minutes.",
+            "mark": "it takes TEN MIN-utes. ↘"
+          },
+          {
+            "text": "Is it far?",
+            "mark": "is it FAR? ↗"
+          },
+          {
+            "text": "How long does it take?",
+            "mark": "how LONG does it TAKE? ↘"
+          },
+          {
+            "text": "How long does it take to get there?",
+            "mark": "how LONG does it TAKE to get THERE? ↘"
+          }
+        ]
+      },
+      "pattern": {
+        "frame": "How long does it take to ...?",
+        "note_zh": "问做一件事要多久，用 How long does it take to + 动词原形? 回答用 It takes + 时间。",
+        "sentences": [
+          {
+            "cue_zh": "到那儿要多久？",
+            "cue_en": "get there",
+            "en": "How long does it take to get there?"
+          },
+          {
+            "cue_zh": "这个要煮多久？",
+            "cue_en": "cook / this",
+            "en": "How long does it take to cook this?"
+          },
+          {
+            "cue_zh": "要学会得多久？",
+            "cue_en": "learn / it",
+            "en": "How long does it take to learn it?"
+          },
+          {
+            "cue_zh": "走到那儿要多久？",
+            "cue_en": "walk / there",
+            "en": "How long does it take to walk there?"
+          },
+          {
+            "cue_zh": "办签证要多久？",
+            "cue_en": "visa",
+            "en": "How long does it take to get a visa?"
+          },
+          {
+            "cue_zh": "坐公交到那儿要多久？",
+            "cue_en": "get there / by bus",
+            "en": "How long does it take to get there by bus?"
+          }
+        ],
+        "swaps": [
+          {
+            "cue_zh": "修好它要多久？",
+            "cue_en": "fix / it",
+            "en": "How long does it take to fix it?"
+          },
+          {
+            "cue_zh": "多久能收到回复？",
+            "cue_en": "reply",
+            "en": "How long does it take to get a reply?"
+          },
+          {
+            "cue_zh": "从这儿走过去要多久？",
+            "cue_en": "walk / from here",
+            "en": "How long does it take to walk from here?"
+          }
+        ]
+      },
+      "task": {
+        "scene_zh": "你在车站问去机场的大巴。工作人员会告诉你班次，你想知道路上多久、多久一班、在哪儿买票。",
+        "role": "You are a worker at the bus station. Answer questions about the airport bus: travel time, how often it runs, and where to buy tickets.",
+        "opener": "Hi, can I help you find something?",
+        "goal_zh": "用 How long does it take to ...? 问清到机场要多久，并问出多久一班、在哪儿买票。"
+      }
+    },
+    {
+      "id": "s1-u07",
+      "stage": 1,
+      "title": "平时和今天",
+      "can": "能对比平时和今天的做法，并说明原因。",
+      "sound": {
+        "title": "/iː/ 和 /ɪ/",
+        "note_zh": "/iː/ 嘴角往两边拉开，声音长一点，像 sheep、seat；/ɪ/ 嘴放松，短而轻，像 ship、sit。ship 说成 sheep、sit 说成 seat，对方会听成另一个词。",
+        "link": {
+          "label": "Sounds American：/ɪ/（ship）",
+          "url": ""
+        },
+        "items": [
+          {
+            "text": "ship / sheep",
+            "mark": "SHIP /ʃɪp/ / SHEEP /ʃiːp/"
+          },
+          {
+            "text": "sit / seat",
+            "mark": "SIT /sɪt/ / SEAT /siːt/"
+          },
+          {
+            "text": "I need a seat.",
+            "mark": "I NEED a SEAT."
+          },
+          {
+            "text": "I usually eat at home, but today I'm eating out.",
+            "mark": "I U-su-al-ly EAT at HOME, but to-DAY I'm EAT-ing OUT."
+          }
+        ]
+      },
+      "pattern": {
+        "frame": "I usually ..., but today I'm ...",
+        "note_zh": "对比平时的习惯和今天的情况：前面用一般现在时说习惯，后面用 today I'm + 动词-ing 说今天正在做或已经定了的事。",
+        "sentences": [
+          {
+            "cue_zh": "我平时在家吃，今天在外面吃。",
+            "cue_en": "eat at home / eat out",
+            "en": "I usually eat at home, but today I'm eating out."
+          },
+          {
+            "cue_zh": "我平时坐公交，今天走路。",
+            "cue_en": "bus / walk",
+            "en": "I usually take the bus, but today I'm walking."
+          },
+          {
+            "cue_zh": "我平时加班，今天早走。",
+            "cue_en": "work late / leave early",
+            "en": "I usually work late, but today I'm leaving early."
+          },
+          {
+            "cue_zh": "我平时喝茶，今天喝咖啡。",
+            "cue_en": "tea / coffee",
+            "en": "I usually drink tea, but today I'm drinking coffee."
+          },
+          {
+            "cue_zh": "我平时做饭，今天点披萨。",
+            "cue_en": "cook / pizza",
+            "en": "I usually cook, but today I'm ordering pizza."
+          },
+          {
+            "cue_zh": "我平时给她发短信，今天打电话。",
+            "cue_en": "text her / call her",
+            "en": "I usually text her, but today I'm calling her."
+          }
+        ],
+        "swaps": [
+          {
+            "cue_zh": "我平时开车，今天坐火车。",
+            "cue_en": "drive / train",
+            "en": "I usually drive, but today I'm taking the train."
+          },
+          {
+            "cue_zh": "我平时起得早，今天睡懒觉。",
+            "cue_en": "get up early / sleep in",
+            "en": "I usually get up early, but today I'm sleeping in."
+          },
+          {
+            "cue_zh": "我平时待在家，今天出门。",
+            "cue_en": "stay home / go out",
+            "en": "I usually stay home, but today I'm going out."
+          }
+        ]
+      },
+      "task": {
+        "scene_zh": "同事看到你今天没在工位吃午饭，问你怎么了。你说平时怎样、今天怎样，还要解释原因。",
+        "role": "You are the learner's coworker. Notice that they are not eating at their desk today, as they usually do. Ask what is different today and why.",
+        "opener": "Hey, you're not eating at your desk today. What's up?",
+        "goal_zh": "用 I usually ..., but today I'm ... 说出一组平时和今天的对比，并给出原因。"
+      }
+    },
+    {
+      "id": "s1-u08",
+      "stage": 1,
+      "title": "请人帮忙",
+      "can": "能客气地请别人重复、放慢或帮忙。",
+      "sound": {
+        "title": "/æ/ 和 /e/",
+        "note_zh": "/æ/ 嘴张大，下巴放下来，像 bad、cat；/e/ 嘴张得小一点，像 bed、pen。bad 说成 bed，对方会以为你在说床。",
+        "link": {
+          "label": "Sounds American：/æ/（bad）",
+          "url": ""
+        },
+        "items": [
+          {
+            "text": "bad / bed",
+            "mark": "BAD /bæd/ / BED /bɛd/"
+          },
+          {
+            "text": "man / men",
+            "mark": "MAN /mæn/ / MEN /mɛn/"
+          },
+          {
+            "text": "a bad day",
+            "mark": "a BAD /bæd/ DAY"
+          },
+          {
+            "text": "Could you hand me that bag?",
+            "mark": "Could you HAND me that BAG?"
+          }
+        ]
+      },
+      "pattern": {
+        "frame": "Could you ...?",
+        "note_zh": "Could you ...? 比 Can you ...? 更客气，后面跟动词原形。请人帮忙、重复、放慢时最常用。",
+        "sentences": [
+          {
+            "cue_zh": "能再说一遍吗？",
+            "cue_en": "say / again",
+            "en": "Could you say that again?"
+          },
+          {
+            "cue_zh": "能帮我弄一下这个吗？",
+            "cue_en": "help / this",
+            "en": "Could you help me with this?"
+          },
+          {
+            "cue_zh": "能说慢一点吗？",
+            "cue_en": "slower",
+            "en": "Could you speak a little slower?"
+          },
+          {
+            "cue_zh": "能把窗打开吗？",
+            "cue_en": "window",
+            "en": "Could you open the window?"
+          },
+          {
+            "cue_zh": "能把地址发我吗？",
+            "cue_en": "address",
+            "en": "Could you send me the address?"
+          },
+          {
+            "cue_zh": "能把那个包递给我吗？",
+            "cue_en": "hand / bag",
+            "en": "Could you hand me that bag?"
+          }
+        ],
+        "swaps": [
+          {
+            "cue_zh": "能把门关上吗？",
+            "cue_en": "close / door",
+            "en": "Could you close the door?"
+          },
+          {
+            "cue_zh": "能给我回个电话吗？",
+            "cue_en": "call back",
+            "en": "Could you call me back?"
+          },
+          {
+            "cue_zh": "能教我怎么弄吗？",
+            "cue_en": "show / how",
+            "en": "Could you show me how?"
+          }
+        ]
+      },
+      "task": {
+        "scene_zh": "线上会议声音不清楚，你请旁边的同事重复一遍、说慢一点，并借一副耳机。同事会回答并问你听清没有。",
+        "role": "You are the learner's coworker in the office. Respond to requests for help with the online meeting and lend headphones.",
+        "opener": "Hey, what's up?",
+        "goal_zh": "用 Could you ...? 请同事重复一遍、说慢一点，并借到一副耳机。"
+      }
+    },
+    {
+      "id": "s1-u09",
+      "stage": 1,
+      "title": "说看法",
+      "can": "能说出自己的看法，并给出理由。",
+      "sound": {
+        "title": "/θ/ 和 /s/",
+        "note_zh": "/θ/ 舌尖轻轻放在上下牙之间，气从缝里出来，像 think、thank；/s/ 舌尖在嘴里，不碰牙，像 sink、sank。think 说成 sink，意思就变了。",
+        "link": {
+          "label": "Sounds American：/θ/（think）",
+          "url": ""
+        },
+        "items": [
+          {
+            "text": "think / sink",
+            "mark": "THINK /θɪŋk/ / SINK /sɪŋk/"
+          },
+          {
+            "text": "thank / sank",
+            "mark": "THANK /θæŋk/ / SANK /sæŋk/"
+          },
+          {
+            "text": "I think so.",
+            "mark": "I THINK so."
+          },
+          {
+            "text": "I think we should wait, because it's raining.",
+            "mark": "I THINK we should WAIT, be-CAUSE it's RAIN-ing."
+          }
+        ]
+      },
+      "pattern": {
+        "frame": "I think ..., because ...",
+        "note_zh": "说看法用 I think 加一句话，给理由用 because 加一句话。because 后面要跟完整的主谓。",
+        "sentences": [
+          {
+            "cue_zh": "我觉得该等一等，因为在下雨。",
+            "cue_en": "wait / raining",
+            "en": "I think we should wait, because it's raining."
+          },
+          {
+            "cue_zh": "我觉得他说得对，因为他懂规则。",
+            "cue_en": "he's right / rules",
+            "en": "I think he's right, because he knows the rules."
+          },
+          {
+            "cue_zh": "我觉得太贵了，因为要五十块。",
+            "cue_en": "too expensive / fifty dollars",
+            "en": "I think it's too expensive, because it costs fifty dollars."
+          },
+          {
+            "cue_zh": "我觉得她累了，因为她上了一天班。",
+            "cue_en": "she's tired / worked",
+            "en": "I think she's tired, because she worked all day."
+          },
+          {
+            "cue_zh": "我觉得这个更好，因为小一点。",
+            "cue_en": "this one / smaller",
+            "en": "I think this one is better, because it's smaller."
+          },
+          {
+            "cue_zh": "我觉得我们迷路了，因为我看不到路牌。",
+            "cue_en": "lost / signs",
+            "en": "I think we're lost, because I can't see any signs."
+          }
+        ],
+        "swaps": [
+          {
+            "cue_zh": "我觉得这主意不错，因为省时间。",
+            "cue_en": "good idea / saves time",
+            "en": "I think it's a good idea, because it saves time."
+          },
+          {
+            "cue_zh": "我觉得他需要帮忙，因为看着像迷路了。",
+            "cue_en": "needs help / lost",
+            "en": "I think he needs help, because he looks lost."
+          },
+          {
+            "cue_zh": "我觉得该走了，因为不早了。",
+            "cue_en": "go now / late",
+            "en": "I think we should go now, because it's late."
+          }
+        ]
+      },
+      "task": {
+        "scene_zh": "朋友想现在出门，你看了看天气和路程，觉得该等一等。朋友问你的意见，你要说看法和理由。",
+        "role": "You are the learner's friend. Suggest going out now, then ask for their opinion and reason.",
+        "opener": "So, should we go now or wait a bit?",
+        "goal_zh": "用 I think ..., because ... 说出现在该不该出门，并给出至少一个理由。"
+      }
+    },
+    {
+      "id": "s1-u10",
+      "stage": 1,
+      "title": "说以前",
+      "can": "能对比以前和现在的习惯。",
+      "sound": {
+        "title": "词尾辅音",
+        "note_zh": "词尾的辅音要轻轻收住，不能整个丢掉，也不能在后面加一个元音，比如 want 不要读成 \"wan-te\"。方括号里是要收住的尾音。",
+        "link": {
+          "label": "Sounds American：辅音与词尾收音",
+          "url": "https://soundsamerican.net/"
+        },
+        "items": [
+          {
+            "text": "want",
+            "mark": "WAN[t]"
+          },
+          {
+            "text": "need",
+            "mark": "NEE[d]"
+          },
+          {
+            "text": "world",
+            "mark": "WOR[ld]"
+          },
+          {
+            "text": "I used to run, but now I walk.",
+            "mark": "I USED to RU[n], but NOW I WAL[k]."
+          }
+        ]
+      },
+      "pattern": {
+        "frame": "I used to ..., but now I ...",
+        "note_zh": "说以前的习惯用 used to + 动词原形，现在不这样了用 but now 加一般现在时。used to 的 d 几乎不发音。",
+        "sentences": [
+          {
+            "cue_zh": "我以前跑步，现在走路。",
+            "cue_en": "run / walk",
+            "en": "I used to run, but now I walk."
+          },
+          {
+            "cue_zh": "我以前抽烟，现在不抽了。",
+            "cue_en": "smoke / don't",
+            "en": "I used to smoke, but now I don't."
+          },
+          {
+            "cue_zh": "我以前住市中心，现在住这儿。",
+            "cue_en": "downtown / here",
+            "en": "I used to live downtown, but now I live here."
+          },
+          {
+            "cue_zh": "我们以前常在外面吃，现在自己做。",
+            "cue_en": "eat out / cook",
+            "en": "We used to eat out, but now we cook."
+          },
+          {
+            "cue_zh": "她以前上夜班，现在上白班。",
+            "cue_en": "nights / days",
+            "en": "She used to work nights, but now she works days."
+          },
+          {
+            "cue_zh": "我以前讨厌咖啡，现在很爱喝。",
+            "cue_en": "hate coffee / love it",
+            "en": "I used to hate coffee, but now I love it."
+          }
+        ],
+        "swaps": [
+          {
+            "cue_zh": "我以前打网球，现在游泳。",
+            "cue_en": "tennis / swim",
+            "en": "I used to play tennis, but now I swim."
+          },
+          {
+            "cue_zh": "他以前是老师，现在卖车。",
+            "cue_en": "teacher / sells cars",
+            "en": "He used to be a teacher, but now he sells cars."
+          },
+          {
+            "cue_zh": "我以前坐公交，现在骑车。",
+            "cue_en": "bus / bike",
+            "en": "I used to take the bus, but now I bike."
+          }
+        ]
+      },
+      "task": {
+        "scene_zh": "多年没见的老朋友问你现在过得怎么样。他问你还做不做以前的运动、还住不住原来的地方，你说以前怎样、现在怎样。",
+        "role": "You are the learner's old friend. Ask what has changed in their life since you last met.",
+        "opener": "Wow, it's been years! So what's new with you?",
+        "goal_zh": "用 I used to ..., but now I ... 说出一组以前和现在的变化，并回答朋友的一个追问。"
+      }
+    }
+  ]
+}

@@ -691,3 +691,83 @@ audio.native { width: 100%; height: 40px; }
 @media (max-width: 600px) {
   .ev-card { padding: 14px 16px; }
 }
+
+/* ---------- Rebirth 第 1 期：课程骨架（rb-） ---------- */
+.rb-countdown {
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap;
+  padding: 18px 22px; border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--elev);
+}
+.rb-countdown-main { display: flex; align-items: baseline; gap: 8px; }
+.rb-countdown-main span { color: var(--muted); font-size: 13px; }
+.rb-big {
+  font: 600 46px/1 var(--f-ui); letter-spacing: -.035em;
+  font-variant-numeric: tabular-nums; color: var(--ink);
+}
+.rb-countdown-meta { display: flex; gap: 6px 16px; flex-wrap: wrap; color: var(--muted); font-size: 12px; }
+
+.rb-stages { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.rb-stage {
+  position: relative; display: grid; gap: 1px; padding: 11px 2px 0;
+  border-top: 2px solid var(--line); color: var(--muted); min-width: 0;
+}
+.rb-stage-bar { position: absolute; top: -2px; left: 0; width: 0; height: 2px; background: var(--ink); transition: width .3s linear; }
+.rb-stage b { font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.rb-stage small { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.rb-stage.is-current { border-top-color: var(--accent); }
+.rb-stage.is-current b, .rb-stage.is-current small { color: var(--accent-ink); }
+.rb-stage.is-current .rb-stage-bar { background: var(--accent); }
+.rb-stage.is-done { border-top-color: var(--good); }
+.rb-stage.is-done b { color: var(--good); }
+.rb-stage.is-done .rb-stage-bar { background: var(--good); }
+
+.rb-timer {
+  display: grid; gap: 10px; padding: 14px 18px;
+  border-radius: var(--r); background: var(--surface-2);
+}
+.rb-timer-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.rb-clock {
+  font: 600 38px/1 var(--f-ui); letter-spacing: -.03em;
+  font-variant-numeric: tabular-nums; color: var(--ink);
+}
+.rb-timer-label { color: var(--muted); font-size: 12px; }
+.rb-timer.is-over .rb-clock, .rb-timer.is-over .rb-timer-label { color: var(--accent-ink); }
+.rb-timer.is-busy .rb-clock { color: var(--muted); }
+.rb-bar { height: 4px; border-radius: 2px; overflow: hidden; background: var(--surface); }
+.rb-bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s linear; }
+.rb-timer.is-over .rb-bar i { background: var(--accent-ink); }
+.rb-timer.is-busy .rb-bar i { background: var(--muted); }
+
+.rb-panel { gap: 14px; }
+.rb-subtitle { font: 500 23px/1.3 var(--f-text); }
+.rb-step-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rb-cue { font: 500 30px/1.35 var(--f-text); letter-spacing: -.01em; overflow-wrap: anywhere; }
+.rb-en { font: 500 23px/1.45 var(--f-text); overflow-wrap: anywhere; }
+.rb-mark { font: 500 21px/1.5 var(--f-text); color: var(--ink-2); overflow-wrap: anywhere; }
+.rb-frame { font: 500 27px/1.35 var(--f-text); }
+.rb-hint-en { font: 500 19px/1.5 var(--f-text); color: var(--muted); }
+.rb-pattern-head { display: grid; gap: 6px; }
+.rb-busy { color: var(--muted); }
+.rb-dialog { display: grid; gap: 10px; }
+.rb-turn {
+  display: grid; gap: 3px; padding: 10px 14px; border-radius: var(--r);
+  background: var(--surface); box-shadow: var(--elev);
+}
+.rb-turn.me { background: var(--surface-2); box-shadow: none; }
+.rb-turn p { font: 16px/1.55 var(--f-text); overflow-wrap: anywhere; }
+.rb-who { font-size: 11px; font-weight: 600; letter-spacing: .06em; color: var(--muted); }
+.rb-slip-wrap { display: grid; gap: 10px; }
+.rb-slip { border-left: 3px solid var(--warn); display: grid; gap: 4px; }
+.rb-fix { border-left: 3px solid var(--good); display: grid; gap: 4px; }
+.rb-scene { display: grid; gap: 4px; }
+.rb-scene b { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .06em; }
+
+.rb-finish { gap: 10px; }
+.rb-finish-main { display: flex; align-items: baseline; gap: 8px; }
+.rb-finish-main span { color: var(--muted); font-size: 13px; }
+
+@media (max-width: 600px) {
+  .rb-big { font-size: 38px; }
+  .rb-clock { font-size: 32px; }
+  .rb-cue, .rb-frame { font-size: 24px; }
+  .rb-stage small { display: none; }
+}

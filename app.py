@@ -564,7 +564,7 @@ def stuck_points(words: list[list], spans: list[tuple[float, float]]) -> list[di
 
 # ---------------------------------------------------------------- recordings archive
 CURVE_KINDS = {"talk", "baseline", "r432", "solo"}  # free monologues: the only kinds whose metrics go on the curves
-KINDS = CURVE_KINDS | {"chat", "shadow", "chunk", "review", "pron"}
+KINDS = CURVE_KINDS | {"chat", "shadow", "chunk", "review", "pron", "course"}
 REC_INDEX: dict[str, dict] = {}
 
 

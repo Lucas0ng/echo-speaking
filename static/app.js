@@ -72,7 +72,7 @@ const LEARNER = "The learner is a Chinese graduate student practising spoken Eng
   + "Their goal is to speak fluently at work and in daily life. They are NOT preparing for an exam: never mention exams, test scores, examiners or IELTS bands, and give advice for real conversations. Explanations for the learner are in simplified Chinese; English examples are natural, spoken and modern.";
 
 /* ================= state ================= */
-const S = { days: {}, lessons: {}, srs: {}, cards: {}, errs: {}, pron: { tests: [], drills: {} }, shadow: {}, repairs: [], chatTasks: [], prefs: { cur: 1, voice: '', ttsRate: 0.95, autoSpeak: true, level: 'normal', rate: 1, blind: false } };
+const S = { days: {}, lessons: {}, srs: {}, cards: {}, errs: {}, pron: { tests: [], drills: {} }, shadow: {}, repairs: [], chatTasks: [], rb: { n: 0, unit: 0, log: [], cur: null }, prefs: { cur: 1, voice: '', ttsRate: 0.95, autoSpeak: true, level: 'normal', rate: 1, blind: false } };
 let LESSONS = [], N = 0, STATUS = {}, CFG = null;
 /* Nothing is saved until the stored progress has loaded: saving the empty starting state would wipe it. */
 let saveT, stateLoaded = false, saveWarned = false;
@@ -95,9 +95,9 @@ function markLesson(n, step) {
 }
 /* Moving on without speaking is a skip, kept apart from done: it never counts towards the lesson or the habit dots. */
 function skipLesson(n, step) { const L = lessonRec(n); if (!L[step]) { (L.skip ||= {})[step] = today(); save(); } }
-const DAY_FLAGS = ['sh', 'ph', 'sp', 'rv', 'rt', 'bl', 'er', 'pr', 'so', 'wu'];
+const DAY_FLAGS = ['sh', 'ph', 'sp', 'rv', 'rt', 'bl', 'er', 'pr', 'so', 'wu', 'rb'];
 const active = d => { const v = S.days[d]; return !!(v && (v.ch || DAY_FLAGS.some(k => v[k]))); };
-const FLAG_ZH = { wu: '复述上次', sh: '跟读', ph: '语块造句', sp: '开口说', ch: 'AI 对话', rt: '4/3/2', so: '自言自语', rv: '语块复习', er: '错误本', pr: '发音', bl: '基准录音' };
+const FLAG_ZH = { wu: '复述上次', sh: '跟读', ph: '语块造句', sp: '开口说', ch: 'AI 对话', rt: '4/3/2', so: '自言自语', rv: '语块复习', er: '错误本', pr: '发音', bl: '基准录音', rb: '课程' };
 const lastActiveDay = () => Object.keys(S.days).filter(d => d < today() && active(d)).sort().pop() || null;
 const daysAgo = d => Math.round((new Date(today() + 'T12:00:00') - new Date(d + 'T12:00:00')) / 864e5);
 const relDay = d => { const n = daysAgo(d); return n === 1 ? '昨天' : n === 2 ? '前天' : n + ' 天前'; };
@@ -682,20 +682,27 @@ function renderHeader() {
   const last = lastActiveDay();
   $('#habitLine').textContent = active(today()) ? '今天开过口了 · 本周练了 ' + nWk + ' 天'
     : (nWk ? '本周练了 ' + nWk + ' 天' : '这周还没开始') + (last ? ' · 上次是' + relDay(last) + '：' + dayWhat(last) : '');
-  // Where you are, not how far is left; lessons completed are on the progress page.
-  $('#subline').textContent = N ? '第 ' + S.prefs.cur + ' 课 · 共 ' + N + ' 课' : '';
+  // Rebirth 的倒计时；course.json 没载入时保持旧的雅思课号。
+  if (COURSE) {
+    const done = Math.max(0, Number(S.rb?.n) || 0);
+    const left = Math.max(0, (Number(COURSE.total) || 0) - done);
+    const m = Math.max(1, Number(COURSE.milestone) || 1);
+    $('#subline').textContent = '还剩 ' + left + ' 节 · 离里程碑 ' + (m - (done % m)) + ' 节';
+  } else {
+    $('#subline').textContent = N ? '第 ' + S.prefs.cur + ' 课 · 共 ' + N + ' 课' : '';
+  }
   if (STATUS.lessons) $('#railFoot').textContent = STATUS.ielts_transcribed >= STATUS.lessons ? '全部字幕已就绪' : '本地字幕 ' + STATUS.ielts_transcribed + ' / ' + STATUS.lessons + ' 集，空闲时在后台生成';
 }
 let TAB = 'today';
 function setTab(t) {
   togglePageHelp(false);
   if (t === 'log') t = 'progress';
-  if (!['today', 'mine', 'retell', 'solo', 'chunks', 'errors', 'pron', 'chat', 'progress', 'settings', 'help'].includes(t)) t = 'today';
+  if (!['today', 'ielts', 'mine', 'retell', 'solo', 'chunks', 'errors', 'pron', 'chat', 'progress', 'settings', 'help'].includes(t)) t = 'today';
   if (TAB !== t) stopEverything();
   TAB = t;
   $$('.nav a').forEach(a => a.setAttribute('aria-selected', String(a.dataset.tab === t)));
   $$('main[data-view]').forEach(m => { m.hidden = m.dataset.view !== t; });
-  ({ today: renderToday, mine: renderMine, retell: renderRetell, solo: renderSolo, chunks: renderChunks, errors: renderErrors, pron: renderPron, chat: renderChat, progress: renderProgress, settings: renderSettings, help: renderHelp })[t]();
+  ({ today: renderCourse, ielts: renderToday, mine: renderMine, retell: renderRetell, solo: renderSolo, chunks: renderChunks, errors: renderErrors, pron: renderPron, chat: renderChat, progress: renderProgress, settings: renderSettings, help: renderHelp })[t]();
   if (location.hash !== '#' + t) history.replaceState(null, '', '#' + t);
   $('#pageHelp').hidden = t === 'help';
 }
@@ -732,12 +739,15 @@ function rerenderOwner(owner) {
   else if (String(owner).startsWith('chat')) renderChat();
   else if (String(owner).startsWith('rev')) renderChunks();
   else if (String(owner).startsWith('err')) renderErrors();
+  else if (String(owner).startsWith('rb')) renderCourse();
   else renderToday();
 }
 
 let RTOK = 0;
 async function renderToday() {
-  const root = $('#view-today'); if (root.hidden) return;
+  // guide.js 等旧代码仍直接调用 renderToday()；在「今天」页上应重画新课程，在「雅思跟读」页上才画旧课程。
+  if (TAB === 'today' && !$('#view-today').hidden) { renderCourse(); return; }
+  const root = $('#view-ielts'); if (root.hidden) return;
   const myTok = ++RTOK;
   if (!N) { root.replaceChildren(...[guideCard(), h('p', { class: 'err', text: STATUS.lesson_error || '没有读到课程。检查设置里的资料文件夹。' })].filter(Boolean)); return; }
   const n = S.prefs.cur, L = LESSONS[n - 1], rec = lessonRec(n), st = lp(n);
@@ -775,7 +785,7 @@ async function renderToday() {
   if (lessonDone(n)) frag.push(h('div', { class: 'next-cta' }, h('span', { text: '第 ' + n + ' 课完成了。' }),
     h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => startChatOn(n) }, '用这个话题和 AI 聊聊'), n < N ? h('button', { class: 'btn primary', onclick: () => goLesson(n + 1) }, '下一课') : null)));
 
-  if (myTok !== RTOK || $('#view-today').hidden || S.prefs.cur !== n) return;
+  if (myTok !== RTOK || $('#view-ielts').hidden || S.prefs.cur !== n) return;
   const y = window.scrollY; root.replaceChildren(...frag); window.scrollTo(0, y);
 }
 /* The day opens with a 1-minute retell of the last lesson talked about. After a gap of a day or more it is the way back in:
@@ -2576,10 +2586,12 @@ async function renderSettings() {
     const [ls, st] = await Promise.all([api('/api/lessons'), api('/api/status')]);
     LESSONS = ls.lessons; N = LESSONS.length; STATUS = st;
     await Promise.all([
-      api('/api/state').then(d => { for (const k of ['days', 'lessons', 'srs', 'cards', 'errs', 'pron', 'shadow', 'repairs', 'chatTasks']) if (d[k]) S[k] = d[k]; Object.assign(S.prefs, d.prefs || {}); stateLoaded = true; })
+      api('/api/state').then(d => { for (const k of ['days', 'lessons', 'srs', 'cards', 'errs', 'pron', 'shadow', 'repairs', 'chatTasks', 'rb']) if (d[k]) S[k] = d[k]; Object.assign(S.prefs, d.prefs || {}); stateLoaded = true; })
         .catch(e => alertBox('读不到之前的进度（' + e.message + '），这次练习不会保存。按 ⌘R 重新载入。')),
       loadRecs()]);
   } catch (e) { $('#view-today').replaceChildren(h('p', { class: 'err', text: e.message })); return; }
+  // 新课程数据先载入完，再画顶栏和「今天」页。
+  try { await COURSE_READY; } catch {}
   if (!S.prefs.cur || S.prefs.cur > N) S.prefs.cur = 1;
   CHAT.lesson = S.prefs.cur;
   renderHeader(); updateBadge();
