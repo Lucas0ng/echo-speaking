@@ -327,6 +327,12 @@ function rbLink(link) {
   if (!link?.url) return null;
   return h('p', { class: 'hint' }, h('span', { text: '参考：' }), h('a', { href: link.url, target: '_blank', rel: 'noopener' }, link.label || link.url));
 }
+/* Notes are short lines; **phrase** marks the words to look at first. */
+function rbNote(text) {
+  if (!text) return null;
+  return h('div', { class: 'rb-note' }, String(text).split('\n').filter(x => x.trim()).map(line =>
+    h('p', null, ...line.split('**').map((part, i) => (i % 2 ? h('b', { text: part }) : part)))));
+}
 function rbStepHead(tag, hint) {
   return h('div', { class: 'rb-step-head' }, h('span', { class: 'tag', text: tag }), hint ? h('span', { class: 'hint', text: hint }) : null);
 }
@@ -421,6 +427,7 @@ function rbRecallPanel() {
 
 async function rbRecallSay(blob, id, card) {
   const j = await rbStt(blob, card.en, { unit: rbNorm().unit, seg: 'recall', card: id });
+  if (!j.text) { alertBox('没听清，再说一次。'); renderCourse(); return; }
   const a = align(card.en, j.text || '', j.words);
   const s = a.score / 100; // align 给的是百分数
   const fast = Number.isFinite(+j.onset) && +j.onset <= RB_FAST_ONSET;
@@ -442,7 +449,7 @@ function rbSoundPanel() {
   const total = RB.items.length;
   const head = [
     h('h3', { class: 'rb-subtitle', text: sound.title || '声音' }),
-    sound.note_zh ? h('p', { class: 'hint', text: sound.note_zh }) : null,
+    rbNote(sound.note_zh),
     rbLink(sound.link),
   ].filter(Boolean);
   if (!total) return h('section', { class: 'panel rb-panel' }, ...head, h('p', { class: 'notice', text: '这个单元没有声音练习。' }), h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => rbAdvanceSeg() }, '进下一段')));
@@ -456,11 +463,12 @@ function rbSoundPanel() {
     h('p', { class: 'rb-mark', text: item.mark || '' }),
   ];
   if (r) {
-    kids.push(diffView(item.text || '', r.text, r.words));
+    if (r.text != null) kids.push(diffView(item.text || '', r.text, r.words));
     kids.push(h('div', { class: 'row' },
+      h('button', { class: 'btn', onclick: e => say(item.text || '', e.currentTarget) }, ic('speak'), '听原声'),
+      h('button', { class: 'btn', onclick: () => playBlobUrl(r.url) }, ic('speak'), '听自己'),
+      h('button', { class: 'btn', onclick: () => { RB.result = null; renderCourse(); } }, '再说一次'),
       h('button', { class: 'btn primary', onclick: () => rbAfterItem(total) }, rbAdvanceLabel(RB.idx + 1 >= total ? '进下一段' : '下一句'))));
-  } else if (RB.busy) {
-    kids.push(rbBusy());
   } else {
     kids.push(h('div', { class: 'row' },
       h('button', { class: 'btn', onclick: e => say(item.text || '', e.currentTarget) }, ic('speak'), '听'),
@@ -470,9 +478,19 @@ function rbSoundPanel() {
 }
 
 async function rbSoundSay(blob, item) {
-  const j = await rbStt(blob, item.text || '', { unit: rbNorm().unit, seg: 'sound', item: RB.idx });
-  RB.result = { text: j.text || '', words: j.words };
+  /* Stress and rhythm are judged by ear, not by speech recognition: play the recording back straight away.
+     Whisper is slow and unreliable on a single word, so only sentences are transcribed, and in the background. */
+  const idx = RB.idx;
+  if (RB.soundUrl) URL.revokeObjectURL(RB.soundUrl);
+  RB.soundUrl = URL.createObjectURL(blob);
+  const res = RB.result = { url: RB.soundUrl, text: null, words: null };
   renderCourse();
+  playBlobUrl(res.url);
+  if (!/\s/.test(String(item.text || '').trim())) return;
+  sttFull(blob, item.text || '', { kind: 'course', line: 'daily', meta: { unit: rbNorm().unit, seg: 'sound', item: idx } }).then(j => {
+    RB.spoken += Number(j.duration) || 0;
+    if (RB.seg === 'sound' && RB.result === res && j.text) { res.text = j.text; res.words = j.words; renderCourse(); }
+  }).catch(() => {});
 }
 
 /* ---------- 新句 ---------- */
@@ -484,7 +502,7 @@ function rbPatternPanel() {
     h('div', { class: 'rb-pattern-head' },
       h('span', { class: 'tag lamp', text: '句型' }),
       h('p', { class: 'rb-frame', text: p.frame || '' }),
-      p.note_zh ? h('p', { class: 'hint', text: p.note_zh }) : null),
+      rbNote(p.note_zh)),
   ];
   if (!total) return h('section', { class: 'panel rb-panel' }, ...head, h('p', { class: 'notice', text: '这个单元没有新句练习。' }), h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => rbAdvanceSeg() }, '进下一段')));
   if (RB.idx >= total) return h('section', { class: 'panel rb-panel' }, ...head, h('p', { class: 'notice', text: '新句练完了。' }), h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => rbAdvanceSeg() }, rbAdvanceLabel('进下一段'))));
@@ -521,6 +539,7 @@ function rbPatternPanel() {
 
 async function rbPatternSay(blob, item) {
   const j = await rbStt(blob, item.en || '', { unit: rbNorm().unit, seg: 'pattern', item: RB.idx, pass: RB.pass });
+  if (!j.text) { alertBox('没听清，再说一次。'); renderCourse(); return; }
   RB.result = { pass: RB.pass, text: j.text || '', words: j.words };
   if (item.kind === 'sentence' && RB.pass === 0) say(item.en || '');
   renderCourse();

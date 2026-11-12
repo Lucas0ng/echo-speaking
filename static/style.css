@@ -771,3 +771,10 @@ audio.native { width: 100%; height: 40px; }
   .rb-cue, .rb-frame { font-size: 24px; }
   .rb-stage small { display: none; }
 }
+
+/* A long unbroken string (a garbled transcript) must wrap, not widen the page. */
+#view-today > *, .rb-panel, .rb-panel > * { min-width: 0; }
+.rb-panel p, .rb-panel .hint, .rb-dialog p { overflow-wrap: anywhere; }
+.rb-note { display: grid; gap: 4px; max-width: 34em; }
+.rb-note p { font-size: 15px; line-height: 1.7; color: var(--ink-2); }
+.rb-note b { color: var(--ink); font-weight: 600; }

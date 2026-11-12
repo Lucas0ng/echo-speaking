@@ -247,8 +247,10 @@ def use_hf_mirror_if_needed() -> None:
 use_hf_mirror_if_needed()
 
 
-def whisper_run(audio: np.ndarray, words: bool = False, prompt: str | None = None) -> dict:
+def whisper_run(audio: np.ndarray, words: bool = False, prompt: str | None = None, max_tokens: int | None = None) -> dict:
     import mlx_whisper
+
+    extra = {"sample_len": max_tokens} if max_tokens else {}
 
     with MODEL_LOCK:
         WHISPER["status"] = "ready"
@@ -260,7 +262,16 @@ def whisper_run(audio: np.ndarray, words: bool = False, prompt: str | None = Non
             initial_prompt=prompt,
             condition_on_previous_text=False,
             verbose=None,
+            **extra,
         )
+
+
+def looped(text: str) -> bool:
+    """A short clip that Whisper could not make out comes back as one fragment repeated ("A,A,A,A,...")."""
+    import zlib
+
+    raw = text.encode("utf-8")
+    return len(raw) > 40 and len(raw) / len(zlib.compress(raw)) > 2.4
 
 
 def to_sentences(result: dict) -> list[dict]:
@@ -1128,8 +1139,14 @@ async def api_stt(audio: UploadFile = File(...), ref: str = Form(""), kind: str 
     if kind and kind not in KINDS:
         raise HTTPException(400, "未知的录音类型")
     prompt = FILLER_PROMPT if kind in CURVE_KINDS else None
-    res = await run_blocking(lambda: whisper_run(samples, words=True, prompt=prompt))
+    # A clip of a word or one sentence gets a token budget in proportion to its length: without it, a quiet or noisy clip
+    # makes Whisper loop to the full 448 tokens (and retry at higher temperatures), which takes a minute and returns junk.
+    secs = len(samples) / SR
+    cap = int(secs * 6) + 12 if secs < 20 else None
+    res = await run_blocking(lambda: whisper_run(samples, words=True, prompt=prompt, max_tokens=cap))
     text = " ".join(s["text"].strip() for s in res.get("segments", [])).strip()
+    if looped(text):
+        return {"text": "", "words": []}
     onset = speech_onset(samples)
     if not kind:
         return {"text": text, "words": word_list(res), "onset": onset}

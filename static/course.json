@@ -47,7 +47,7 @@
       "can": "能在店里点单，并回答店员的追问。",
       "sound": {
         "title": "词重音",
-        "note_zh": "多音节词里有一个音节读得更响、更长、更高，其余音节轻而短。重音放错，对方可能听不出你说的是哪个词。先记住单词的重音位置，再把它放进句子里。",
+        "note_zh": "每个多音节词有**一个音节更响、更长、更高**。\n其余音节要**轻而短**，重音放错对方会听不出是哪个词。\n先记住词的重音位置，再放进句子里。",
         "link": {
           "label": "Rachel's English：Word Stress",
           "url": "https://rachelsenglish.com/"
@@ -73,7 +73,7 @@
       },
       "pattern": {
         "frame": "I'd like ..., please.",
-        "note_zh": "点东西、提要求时最自然的说法，比 I want 客气。I'd 读成一个音节 /aɪd/，后面直接跟名词；please 放句尾，语气更软。",
+        "note_zh": "点东西、提要求用 **I'd like + 想要的东西**，比 I want 客气。\nI'd 读成**一个音节** /aɪd/，please 放句尾，语气更软。",
         "sentences": [
           {
             "cue_zh": "我要一杯咖啡。",
@@ -138,7 +138,7 @@
       "can": "能客气地问对方能不能做一件事。",
       "sound": {
         "title": "句重音",
-        "note_zh": "一句话里，名词、动词、形容词这些实词要加重；冠词、介词、be 动词一带而过。别每个词一样重，把重的词托起来，对方才抓得住重点。",
+        "note_zh": "**实词要重**：名词、动词、形容词。\n冠词、介词、be 动词**一带而过**。\n别每个词一样重，对方才抓得住重点。",
         "link": {
           "label": "BBC：句子重音与节奏",
           "url": "https://www.bbc.co.uk/learningenglish/english/features/pronunciation/tims-pronunciation-workshop-ep-14"
@@ -164,7 +164,7 @@
       },
       "pattern": {
         "frame": "Can I ...?",
-        "note_zh": "Can I ...? 用来客气地问能不能做某事，后面直接跟动词原形。句尾升调，等对方回答。",
+        "note_zh": "**Can I + 动词原形?** 客气地问能不能做某事。\n句尾**升调**，等对方回答。",
         "sentences": [
           {
             "cue_zh": "我能坐这儿吗？",
@@ -229,7 +229,7 @@
       "can": "能说出自己的计划，并回答时间和方式的问题。",
       "sound": {
         "title": "弱读",
-        "note_zh": "to、a、the、can、and 这些小词在句子里要读得又快又轻：to 像 /tə/，a 像 /ə/，can 像 /kən/。别把小词一个个读清楚，轻下来，句子才有英语的节奏。",
+        "note_zh": "to、a、the、can、and 这些小词要读得**又快又轻**。\n别一个个读清楚，句子才有**英语的节奏**。\n例：to 像 **/tə/**，can 像 /kən/。",
         "link": {
           "label": "BBC：弱读与功能词",
           "url": "https://www.bbc.co.uk/learningenglish/english/features/pronunciation/tims-pronunciation-workshop-ep-5"
@@ -255,7 +255,7 @@
       },
       "pattern": {
         "frame": "I'm going to ...",
-        "note_zh": "说打算做的事，用 be going to + 动词原形，比 will 更像已经想好了。口语里 going to 常读得快而轻。",
+        "note_zh": "说打算做的事，用 **be going to + 动词原形**。\n比 will 更像已经想好了。\n口语里 going to 常读得**快而轻**。",
         "sentences": [
           {
             "cue_zh": "我今晚给她打电话。",
@@ -320,7 +320,7 @@
       "can": "能问对方有没有某样东西。",
       "sound": {
         "title": "连读",
-        "note_zh": "前一个词以辅音结尾、后一个词以元音开头时，把那个辅音滑到后面去，听起来像连成一个词。比如 take it 像 ta-kit，turn it on 像 tur-ni-ton。",
+        "note_zh": "前词以辅音结尾、后词以元音开头时，**把辅音滑到后面**。\n听起来像连成一个词。\n例：take it 像 **ta-kit**，turn it on 像 tur-ni-ton。",
         "link": {
           "label": "BBC：连读",
           "url": "https://www.bbc.co.uk/learningenglish/english/features/pronunciation/tims-pronunciation-workshop-ep-1"
@@ -346,7 +346,7 @@
       },
       "pattern": {
         "frame": "Do you have ...?",
-        "note_zh": "问对方有没有某样东西，用 Do you have ...? 后面直接跟名词。有就说 Yes, I do，没有就说 Sorry, I don't。",
+        "note_zh": "问对方有没有某样东西，用 **Do you have + 名词?**\n有就说 **Yes, I do**，没有就说 Sorry, I don't。",
         "sentences": [
           {
             "cue_zh": "现在有空吗？",
@@ -411,7 +411,7 @@
       "can": "能说出自己必须做的事，并问清条件。",
       "sound": {
         "title": "断句",
-        "note_zh": "长句子别一口气冲完，按意思切成几小组，每组一口气，组间停一小下。停错地方会把两个不该连的词连到一起，对方就要猜。",
+        "note_zh": "长句子别一口气冲完，**按意思切成几小组**。\n每组一口气，组间**停一小下**。\n停错地方会连错词，对方就要猜。",
         "link": {
           "label": "BBC：Tim's Pronunciation Workshop（30 集汇总）",
           "url": "https://www.bbc.co.uk/learningenglish/english/features/pronunciation/tims-pronunciation-workshop-ep-30"
@@ -437,7 +437,7 @@
       },
       "pattern": {
         "frame": "I need to ...",
-        "note_zh": "说必须做的事，用 I need to + 动词原形，比 must 口语，意思和 have to 差不多。否定是 I don't need to。",
+        "note_zh": "说必须做的事，用 **I need to + 动词原形**。\n比 must **口语**，意思和 **have to** 差不多。\n否定是 I don't need to。",
         "sentences": [
           {
             "cue_zh": "我六点前得给老板打个电话。",
@@ -502,7 +502,7 @@
       "can": "能问清做一件事要多久。",
       "sound": {
         "title": "语调",
-        "note_zh": "陈述句句尾往下掉，听着像说完了；yes/no 问句句尾往上挑，等着对方回答；what、how 开头的特殊问句句尾往下掉。同一句话，调子不同，意思就不一样。↗ 表示升调，↘ 表示降调。",
+        "note_zh": "陈述句和 what、how 开头的问句，**句尾往下掉**。\nyes/no 问句**句尾往上挑**，等对方回答。\n同一句话调子不同，意思就不同。↗ 升调，↘ 降调。",
         "link": {
           "label": "Rachel's English：Intonation（语调）",
           "url": "https://rachelsenglish.com/"
@@ -532,7 +532,7 @@
       },
       "pattern": {
         "frame": "How long does it take to ...?",
-        "note_zh": "问做一件事要多久，用 How long does it take to + 动词原形? 回答用 It takes + 时间。",
+        "note_zh": "问做一件事要多久，用 **How long does it take to + 动词原形?**\n回答用 **It takes + 时间**。",
         "sentences": [
           {
             "cue_zh": "到那儿要多久？",
@@ -597,7 +597,7 @@
       "can": "能对比平时和今天的做法，并说明原因。",
       "sound": {
         "title": "/iː/ 和 /ɪ/",
-        "note_zh": "/iː/ 嘴角往两边拉开，声音长一点，像 sheep、seat；/ɪ/ 嘴放松，短而轻，像 ship、sit。ship 说成 sheep、sit 说成 seat，对方会听成另一个词。",
+        "note_zh": "**/iː/** 嘴角往两边拉开，声音长一点，像 sheep、seat。\n**/ɪ/** 嘴放松，短而轻，像 ship、sit。\n读错，对方会听成另一个词。",
         "link": {
           "label": "Sounds American：/ɪ/（ship）",
           "url": ""
@@ -623,7 +623,7 @@
       },
       "pattern": {
         "frame": "I usually ..., but today I'm ...",
-        "note_zh": "对比平时的习惯和今天的情况：前面用一般现在时说习惯，后面用 today I'm + 动词-ing 说今天正在做或已经定了的事。",
+        "note_zh": "对比习惯和今天的情况。\n前面用**一般现在时**说习惯。\n后面用 **today I'm + 动词-ing** 说今天正在做或已定的事。",
         "sentences": [
           {
             "cue_zh": "我平时在家吃，今天在外面吃。",
@@ -688,7 +688,7 @@
       "can": "能客气地请别人重复、放慢或帮忙。",
       "sound": {
         "title": "/æ/ 和 /e/",
-        "note_zh": "/æ/ 嘴张大，下巴放下来，像 bad、cat；/e/ 嘴张得小一点，像 bed、pen。bad 说成 bed，对方会以为你在说床。",
+        "note_zh": "**/æ/** 嘴张大，下巴放下来，像 bad、cat。\n**/e/** 嘴张得小一点，像 bed、pen。\n例：bad 说成 bed，对方会以为你在说床。",
         "link": {
           "label": "Sounds American：/æ/（bad）",
           "url": ""
@@ -714,7 +714,7 @@
       },
       "pattern": {
         "frame": "Could you ...?",
-        "note_zh": "Could you ...? 比 Can you ...? 更客气，后面跟动词原形。请人帮忙、重复、放慢时最常用。",
+        "note_zh": "**Could you + 动词原形?** 比 Can you **更客气**。\n请人帮忙、重复、放慢时最常用。",
         "sentences": [
           {
             "cue_zh": "能再说一遍吗？",
@@ -779,7 +779,7 @@
       "can": "能说出自己的看法，并给出理由。",
       "sound": {
         "title": "/θ/ 和 /s/",
-        "note_zh": "/θ/ 舌尖轻轻放在上下牙之间，气从缝里出来，像 think、thank；/s/ 舌尖在嘴里，不碰牙，像 sink、sank。think 说成 sink，意思就变了。",
+        "note_zh": "**/θ/** 舌尖轻放在上下牙之间，气从缝里出来，像 think、thank。\n**/s/** 舌尖在嘴里，不碰牙，像 sink、sank。\nthink 说成 sink，意思就变了。",
         "link": {
           "label": "Sounds American：/θ/（think）",
           "url": ""
@@ -805,7 +805,7 @@
       },
       "pattern": {
         "frame": "I think ..., because ...",
-        "note_zh": "说看法用 I think 加一句话，给理由用 because 加一句话。because 后面要跟完整的主谓。",
+        "note_zh": "说看法用 **I think + 一句话**。\n给理由用 **because + 一句话**。\nbecause 后面要跟完整的主谓。",
         "sentences": [
           {
             "cue_zh": "我觉得该等一等，因为在下雨。",
@@ -870,7 +870,7 @@
       "can": "能对比以前和现在的习惯。",
       "sound": {
         "title": "词尾辅音",
-        "note_zh": "词尾的辅音要轻轻收住，不能整个丢掉，也不能在后面加一个元音，比如 want 不要读成 \"wan-te\"。方括号里是要收住的尾音。",
+        "note_zh": "词尾的辅音要**轻轻收住**。\n不能整个丢掉，也**不能加元音**。\n例：want 不要读成 \"wan-te\"。方括号里是要收住的尾音。",
         "link": {
           "label": "Sounds American：辅音与词尾收音",
           "url": "https://soundsamerican.net/"
@@ -896,7 +896,7 @@
       },
       "pattern": {
         "frame": "I used to ..., but now I ...",
-        "note_zh": "说以前的习惯用 used to + 动词原形，现在不这样了用 but now 加一般现在时。used to 的 d 几乎不发音。",
+        "note_zh": "说以前的习惯用 **used to + 动词原形**。\n现在不这样了，用 **but now + 一般现在时**。\nused to 的 d 几乎不发音。",
         "sentences": [
           {
             "cue_zh": "我以前跑步，现在走路。",
