@@ -921,6 +921,7 @@ function rbPanel(unit) {
 function renderCourse() {
   const root = $('#view-today');
   if (!root || root.hidden) return;
+  if (typeof PL !== 'undefined' && PL.on) { renderPlacement(root); return; }
   rbNorm();
   const frag = [];
   const gc = guideCard();
@@ -966,11 +967,15 @@ function renderCourse() {
   if (!RB.started) {
     const cur = rbNorm().cur;
     const resume = cur && Number(cur.unit) === rbNorm().unit && cur.seg !== 'recall' ? rbSegInfo(cur.seg) : null;
+    const placed = !!(S.rb && S.rb.place);
     frag.push(rbUnitHead(unit), rbCountdownView(), rbStagesView());
     frag.push(h('section', { class: 'panel rb-panel' },
+      placed ? null : h('p', { class: 'rbpl-start-hint', text: '先做一次定位测试（约 10 分钟），决定从哪里学起' }),
       h('p', { class: 'hint', text: '一节 25 分钟，五段：回忆旧句、一个发音点、新句型、和 AI 无稿完成任务、限时重讲。等识别和等 AI 回话的时间不计。' }),
       h('div', { class: 'row' },
-        h('button', { class: 'btn primary', onclick: () => { RB.started = true; renderCourse(); } }, resume ? '接着上（从「' + resume.zh + '」段）' : '开始第 ' + (rbNorm().n + 1) + ' 节'))));
+        placed ? null : h('button', { class: 'btn', onclick: () => startPlacement() }, '开始定位测试'),
+        h('button', { class: 'btn primary', onclick: () => { RB.started = true; renderCourse(); } }, resume ? '接着上（从「' + resume.zh + '」段）' : '开始第 ' + (rbNorm().n + 1) + ' 节')),
+      placed ? h('p', { class: 'rbpl-restart' }, h('button', { class: 'btn ghost', onclick: () => startPlacement() }, '重做定位测试')) : null));
     const y0 = window.scrollY;
     root.replaceChildren(...frag);
     window.scrollTo(0, y0);

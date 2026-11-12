@@ -2671,8 +2671,8 @@ async function renderSettings() {
         .catch(e => alertBox('读不到之前的进度（' + e.message + '），这次练习不会保存。按 ⌘R 重新载入。')),
       loadRecs()]);
   } catch (e) { $('#view-today').replaceChildren(h('p', { class: 'err', text: e.message })); return; }
-  // 新课程数据先载入完，再画顶栏和「今天」页。
-  try { await COURSE_READY; } catch {}
+  // 新课程和定位题库先载入完，再画顶栏和「今天」页。
+  try { await Promise.all([COURSE_READY, PLACEMENT_READY]); } catch {}
   if (!S.prefs.cur || S.prefs.cur > N) S.prefs.cur = 1;
   CHAT.lesson = S.prefs.cur;
   renderHeader(); updateBadge();

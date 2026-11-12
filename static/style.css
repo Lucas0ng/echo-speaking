@@ -781,3 +781,66 @@ audio.native { width: 100%; height: 40px; }
 
 .rb-help { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 14px; }
 .rb-help-input { flex: 1; min-width: 0; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); font: inherit; }
+
+/* ---------- placement test (placement.js) ---------- */
+.rbpl-start-hint {
+  border-left: 3px solid var(--accent);
+  padding: 9px 12px;
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-weight: 500;
+}
+.rbpl-restart { margin-top: 2px; }
+.rbpl-panel { gap: 16px; }
+.rbpl-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rbpl-cue {
+  font: 500 34px/1.35 var(--f-text); letter-spacing: -.01em;
+  min-height: 1.4em; overflow-wrap: anywhere;
+}
+.rbpl-wait { color: var(--muted); }
+.rbpl-result { display: grid; gap: 20px; }
+.rbpl-conclusion { font: 500 25px/1.4 var(--f-text); overflow-wrap: anywhere; }
+.rbpl-table-wrap {
+  overflow-x: auto;
+  border-radius: var(--r);
+  background: var(--surface);
+  box-shadow: var(--elev);
+}
+.rbpl-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.rbpl-table th, .rbpl-table td {
+  padding: 10px 12px; text-align: left; vertical-align: top;
+  border-bottom: 1px solid var(--line);
+}
+.rbpl-table th {
+  font-size: 11.5px; font-weight: 600; color: var(--muted);
+  letter-spacing: .04em; background: var(--surface-2); white-space: nowrap;
+}
+.rbpl-table tr:last-child td { border-bottom: 0; }
+.rbpl-table td b { display: block; font-weight: 600; }
+.rbpl-level-id { display: block; font-size: 11px; color: var(--muted); }
+.rbpl-num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rbpl-levels { display: grid; gap: 14px; }
+.rbpl-level { gap: 10px; }
+.rbpl-level-head { display: grid; gap: 3px; }
+.rbpl-level-title { font: 500 21px/1.3 var(--f-text); }
+.rbpl-level-stats { color: var(--muted); font-size: 12px; }
+.rbpl-item {
+  display: grid; gap: 5px;
+  padding: 12px 14px; border-radius: var(--r);
+  background: var(--surface); box-shadow: var(--elev);
+}
+.rbpl-item-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rbpl-item-cue { font: 500 19px/1.4 var(--f-text); overflow-wrap: anywhere; }
+.rbpl-label {
+  display: inline-block; margin-right: 7px;
+  font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: .04em;
+}
+.rbpl-item-said, .rbpl-item-ref { font: 400 16px/1.55 var(--f-text); color: var(--ink-2); overflow-wrap: anywhere; }
+.rbpl-note-line { font-size: 13px; color: var(--warn); }
+
+@media (max-width: 600px) {
+  .rbpl-cue { font-size: 27px; }
+  .rbpl-conclusion { font-size: 21px; }
+  .rbpl-table th, .rbpl-table td { padding: 8px 9px; }
+}

@@ -1,0 +1,191 @@
+{
+  "version": 1,
+  "levels": [
+    {
+      "id": 1,
+      "name": "A1",
+      "can": "能说出最基本的需要和事实，也能问价格和地点。",
+      "items": [
+        {
+          "cue_zh": "我看好了，可以点菜了。",
+          "en": "I'm ready to order."
+        },
+        {
+          "cue_zh": "我住公司附近。",
+          "en": "I live near the office."
+        },
+        {
+          "cue_zh": "这个本子多少钱？",
+          "en": "How much is this notebook?"
+        },
+        {
+          "cue_zh": "最近的药店在哪？",
+          "en": "Where's the nearest pharmacy?"
+        },
+        {
+          "cue_zh": "我是来面试的。",
+          "en": "I'm here for the interview."
+        },
+        {
+          "cue_zh": "这件有中号吗？",
+          "en": "Do you have this in medium?"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "A2",
+      "can": "能讲过去的经历和接下来的打算，也能比较事物、说明做事的频率。",
+      "items": [
+        {
+          "cue_zh": "我昨天忘了交房租。",
+          "en": "I forgot to pay the rent yesterday."
+        },
+        {
+          "cue_zh": "我打算周五请个假。",
+          "en": "I'm going to ask for Friday off."
+        },
+        {
+          "cue_zh": "中午前能把文件发我吗？",
+          "en": "Can you send me the file by noon?"
+        },
+        {
+          "cue_zh": "这家咖啡馆比楼下那家安静。",
+          "en": "This café is quieter than the one downstairs."
+        },
+        {
+          "cue_zh": "我一般早饭前在家锻炼。",
+          "en": "I usually work out at home before breakfast."
+        },
+        {
+          "cue_zh": "我可以去机场接你。",
+          "en": "I can pick you up at the airport."
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "A2+",
+      "can": "能说最近做完的事、必须做的事和原因，也能约时间。",
+      "items": [
+        {
+          "cue_zh": "报告我已经发给全组了。",
+          "en": "I've already sent the report to the whole team."
+        },
+        {
+          "cue_zh": "下班前我得把这个弄完。",
+          "en": "I have to finish this before I leave."
+        },
+        {
+          "cue_zh": "地铁坏了，所以我迟到了。",
+          "en": "I was late because the subway broke down."
+        },
+        {
+          "cue_zh": "我明天十点见客户。",
+          "en": "I'm meeting the client at ten tomorrow morning."
+        },
+        {
+          "cue_zh": "那家新开的面馆你吃过吗？",
+          "en": "Have you ever tried that new noodle place?"
+        },
+        {
+          "cue_zh": "会开太久了，我午饭都没吃。",
+          "en": "The meeting ran long, so I skipped lunch."
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "name": "B1",
+      "can": "能说一件事的条件和结果、描述人和事、转述别人的话，并在遇到问题时开口求助。",
+      "items": [
+        {
+          "cue_zh": "客户同意的话，我们下周就启动项目。",
+          "en": "If the client agrees, we'll start the project next week."
+        },
+        {
+          "cue_zh": "坐我旁边的同事请假了。",
+          "en": "The colleague who sits next to me is on leave."
+        },
+        {
+          "cue_zh": "经理说截止时间是下周三早上。",
+          "en": "My manager said the deadline is next Wednesday morning."
+        },
+        {
+          "cue_zh": "登录页面一直进不去，你能帮我看看吗？",
+          "en": "I'm having trouble with the login page—could you help?"
+        },
+        {
+          "cue_zh": "今晚有空的话，一起在附近喝一杯？",
+          "en": "If you're free tonight, let's grab a drink nearby."
+        },
+        {
+          "cue_zh": "管报销的同事今天不在。",
+          "en": "The person who handles our expense reports is out today."
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "name": "B1+",
+      "can": "能谈假设和让步，也能用被动说明事情，并复盘本该做的事。",
+      "items": [
+        {
+          "cue_zh": "换了我就先把这事跟人事提。",
+          "en": "If I were you, I'd bring this up with HR first."
+        },
+        {
+          "cue_zh": "包裹今早又送错地址了。",
+          "en": "My package was delivered to the wrong address again this morning."
+        },
+        {
+          "cue_zh": "出发去海边前我真该看眼天气。",
+          "en": "I should've checked the weather before we left for the beach."
+        },
+        {
+          "cue_zh": "虽然工资低点，我更喜欢这份工作。",
+          "en": "Even though the pay is lower, I like this job more."
+        },
+        {
+          "cue_zh": "不用上班的话，我就去听音乐会了。",
+          "en": "If I didn't have to work, I'd go to the concert."
+        },
+        {
+          "cue_zh": "新系统月底装好。",
+          "en": "The new system will be installed at the end of the month."
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "name": "B2",
+      "can": "能谈过去没发生的事、委婉表达不同意见、讲抽象看法，并对过去的事作推测。",
+      "items": [
+        {
+          "cue_zh": "早知道你在城里，我就请你来家里吃饭了。",
+          "en": "If I'd known you were in town, I would've invited you over for dinner."
+        },
+        {
+          "cue_zh": "早点报名的话，会议费本来能便宜不少。",
+          "en": "If we'd registered earlier, we could've gotten a much better rate for the conference."
+        },
+        {
+          "cue_zh": "我明白你的意思，不过我觉得这个办法在这儿行不通。",
+          "en": "I see your point, but I don't think that approach would work here."
+        },
+        {
+          "cue_zh": "我觉得居家办公比大家想的更考验自律。",
+          "en": "I think working from home actually takes more discipline than most people realize."
+        },
+        {
+          "cue_zh": "她可能没看到邮件，组里谁都没收到回复。",
+          "en": "She might have missed the email—she still hasn't replied to anyone on the team."
+        },
+        {
+          "cue_zh": "钥匙肯定是回家路上从包里掉出去了。",
+          "en": "The keys must have fallen out of my bag on the way home."
+        }
+      ]
+    }
+  ]
+}
