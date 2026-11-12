@@ -1,0 +1,116 @@
+# **成年人英语口语习得与训练证据报告**
+
+成年人难完全消除母语口音，但完全可达 CEFR C1–C2 级高可懂度、低交流负荷的“功能性第二母语”1。对已具 B1 阅读、中等听力且口语薄弱的中文母语者，照搬婴儿“纯听+沉默期”不仅低效，且在千小时输入后开口仍易卡顿4；打通“会读会听”到“张口就来”的核心缺口，是脱离文本的主动检索、高变异语音纠偏与限时流利度组装6。按每日 25 分钟（约 152.1 小时/年）计，综合 Cambridge 与 FSI 基准**推断**，中文母语者从 B1 练至口语 C1 预计需 400–800 有效小时（960–1,920 天，约 2.6–5.3 年），至 C2 自动输出需 900–1,500 小时（2,160–3,600 天，约 5.9–9.9 年）9。
+
+## **1\. 成年人上限、关键期与现实终点**
+
+**结论**：成年人语法与语音习得存在随年龄衰减的趋势，零口音几乎不可及；现实终点应定为 C1/C2 精度搭配高可懂度与低理解负担1。  
+**来源原文**：Hartshorne 等（2018）基于约 66.9 万名英语测试者发现语法学习率在 17.4 岁后明显下降（[ResearchGate](https://www.researchgate.net/publication/324895243_A_critical_period_for_second_language_acquisition_Evidence_from_23_million_English_speakers)13），但 2021 年再分析指出连续衰减模型更拟合多数群体，仅非沉浸与晚沉浸组现 18.6 与 19.0 岁拐点，或反映学校教育等社会因素（[ResearchGate](https://www.researchgate.net/publication/354403923_Critical_Period_Claim_Revisited_Reanalysis_of_Hartshorne_Tenenbaum_and_Pinker_2018_Suggests_Steady_Decline_and_Learner-Type_Differences)12）。语音上，Abrahamsson 与 Hyltenstam（2009）发现高阶成人二语者在精细语言学测查下仍显露非母语特征；Flege 修正语音学习模型虽肯定终身语音学习能力，但指出 L1–L2 交互使产出难以完全等同单语母语者（[ResearchGate](https://www.researchgate.net/publication/367049176_Critical_Periods)1；另文献综述提及 6–7 岁与 12–13 岁截点12）。词汇关键期的明确年龄拐点**未查到**。终点标准上，Munro 与 Derwing（1995）证可懂度、理解省力度与口音部分独立，重口音话语仍可高度可懂（[ASAU PDF](https://www.asau.ru/files/pdf/3273113.pdf)3，[Scribd](https://www.scribd.com/document/928745092/Munro-and-Derwing-1995-Foreign-Accent-Comprehensibility-And-Intelligibility-in-the-Speech-of-Second-Language-Learners)15）；新版 CEFR 音系控制量表亦放弃母语准绳，要求 C1/C2 借重音、节奏与语调精准传递微殊语义（[欧洲委员会 PDF](https://rm.coe.int/the-new-scale-for-phonological-control-piccardo-/1680788b29)2）。  
+**推断**：自研软件的 Whisper 与大模型点评应盯紧词句辨识率、重音与语义清晰度，而非模拟母语口音。
+
+## **2\. 达标所需小时数与每日 25 分钟换算**
+
+**结论**：计入跨语系距离与口语短板，推断中文母语者从 B1 升至口语 C1 需 400–800 有效小时，至 C2 自动流利需 900–1,500 小时9。  
+**来源原文**：Cambridge 官方零基础累计指导学时（含课程与作业）：A1 90–100、A2 180–200、B1 350–400、B2 500–600、C1 700–800、C2 1,000–1,200 小时，每级约 200 小时且受母语影响（[Cambridge](https://support.cambridgeenglish.org/hc/en-gb/articles/202838506-Guided-learning-hours)9）。美国 FSI 统计英语母语者达工作熟练：I 类 552–690 课时（24–30 周）、II 类 828 课时（36 周）、III 类 1,012 课时（44 周）、IV 类（三方资料列含中文18）88 周、2,200 课时，典型周配比 23 课时课堂加 17 小时自学（按每周 40 小时折算约 3,520 总学时；[state.gov](https://www.state.gov/national-foreign-affairs-training-center/foreign-language-training)10）。Dreaming Spanish（DS）设 7 级输入路线：0 / 50 / 150 / 300（建议阅读）/ 600（建议开口）/ 1,000 / 1,500 小时（[LingoKeep](https://lingokeep.com/blog/dreaming-spanish-roadmap)19）；三方评测转述其 PDF 称远距语言“耗时更长”（[CopyCatCafe](https://copycatcafe.com/blog/dreaming-spanish-review)4），而“翻倍至 3,000 小时”见于社区与三方文章，DS 官方原文**未查到**直接表述（[Reddit](https://www.reddit.com/r/dreamingspanish/comments/1vgmenk/1150_hour_dreaming_spanish_review/)5，[Audaz](https://audazrevista.com/comprehensible-input-spanish/)20）。其他机构博客估中文独立日常用需 700–1,200 小时、高阶工作 2,000+ 小时（[StudyCLI](https://studycli.org/learn-chinese/how-long-does-it-take-to-learn-chinese/)18），另有英语机构称每周 1 小时仅维持、3–5 小时方推进（[Choices](https://choices-global.com/en/articles/how-long-does-it-take-to-learn-english/)21）；DS 社区 1,500 小时个案自述仍需大量阅读与逾 200 小时说话练习（[Reddit](https://www.reddit.com/r/dreamingspanish/comments/1mmrshd/level_7_update1500h_listening_25_million_words/)22）。  
+**推断**：每日 25 分钟即 0.4167 小时/天（152.08 小时/年），全勤天数按“小时数 ÷ (25/60)”计算；因跨语系难度且口语弱于阅读，基于通用基准上浮估算得下表11：
+
+| 基准路径 | 所需小时数 | 对应天数（25分/天） | 折合年数 |
+| :---- | :---- | :---- | :---- |
+| Cambridge B1→C1 差值 | 350–450 小时 | 840–1,080 天 | 2.3–3.0 年 |
+| Cambridge B1→C2 差值 | 600–850 小时 | 1,440–2,040 天 | 4.0–5.6 年 |
+| FSI IV 类参考（课堂/含自学） | 2,200 / 3,520 小时 | 5,280 / 8,448 天 | 14.5 / 23.1 年 |
+| DS 路线（1,500h/三方估翻倍） | 1,500 / 3,000 小时 | 3,600 / 7,200 天 | 9.9 / 19.7 年 |
+| 推断：中文 B1→C1（口语专攻） | 400–800 小时 | 960–1,920 天 | 2.6–5.3 年 |
+| 推断：中文 B1→C2（第二母语） | 900–1,500 小时 | 2,160–3,600 天 | 5.9–9.9 年 |
+
+## **3\. Paul Nation 的 Four Strands 与 25 分钟分配**
+
+**结论**：Four Strands 要求四项各占总学习时间的 25%，但每日 25 分钟软件练习不应平均拆份，应外置输入，集中专攻产出、流利度与刻意纠偏23。  
+**来源原文**：Nation（2007）提出平衡课程需将总时间均分约 25% 给四股力量：意义输入（以熟悉语言为主的听读）、意义输出（说写传意）、刻意学习（形式规则）与流利度训练（促进既有知识流畅使用）（[VUW PDF](https://www.wgtn.ac.nz/lals/resources/paul-nations-resources/paul-nations-publications/publications/documents/2007-Four-strands.pdf)23，[HackingChinese](https://www.hackingchinese.com/analyse-and-balance-your-chinese-learning-with-paul-nations-four-strands/)24，[Yamamoto PDF](https://profgwhitehead.weebly.com/uploads/4/7/9/3/47931813/yamamoto-four-strands_1.pdf)25）。  
+**推断**：若把 25 分钟切为四段各 6 分钟难以深入；把意义输入挪到软件外的通勤播客与阅读，软件内 25 分钟专注流利度提速、意义对话与录音复盘，才符合全天总配比并直击口语短板。
+
+## **4\. “像婴儿从零学”是否适合成年人**
+
+**结论**：不成立；成人应拒绝长期沉默期与去文字化限制，善用已有读写能力并辅以显性反馈和早期产出4。  
+**来源原文**：DS/ALG 主张延迟阅读至 300 小时、开口至 600 小时并排斥字幕翻译（[LingoKeep](https://lingokeep.com/blog/dreaming-spanish-roadmap)19，[CopyCatCafe](https://copycatcafe.com/blog/dreaming-spanish-review)4）。反证方面，Norris 与 Ortega（2000，49 项研究；[ResearchGate](https://www.researchgate.net/publication/228003219_Effectiveness_of_L2_Instruction_A_Research_Synthesis_and_Quantitative_Meta-analysis)27）及 Spada 与 Tomita（2010，41 项研究；[LearningWiki](https://github.com/Learning-Design-Alliance/learning-wiki/blob/main/claims/explicit-teaching-complex-rules-only-advantage.md)26）元分析显示显性教学总体优于隐性暴露（但存在测验偏袒显性知识的学术争议29，且两文具体效应量数值**未查到**）。此外，评测与产品博客引述：产出练习促进习得并助于发现表达缺口4，同语言字幕元分析有益听力词汇4，Lyster 与 Saito（2010，15 项研究，*N* \= 827）示提示自纠反馈胜过单纯重述（[LexyLearn](https://lexylearn.com/en/blog/pronunciation-training-sla.html)28）；DS 社区个案亦反映千小时输入后开口仍吃力（[Reddit](https://www.reddit.com/r/dreamingspanish/comments/1vgmenk/1150_hour_dreaming_spanish_review/)5）。Krashen、Swain（仅见引注30）、DeKeyser 技能习得与交互假说原始实证正文**未查到**31。  
+**推断**：应借助 B1 阅读底子，通过大模型文字纠错与早期对话缩短试错周期。
+
+## **5\. 从“照着读”到“自己能说”的核心缺口**
+
+**结论**：缺的是脱离文本的主动检索与限时组装；检索练习与 4/3/2 任务重复证据扎实，自动化指标、中译英提示及自言自语**未查到**直接对照实证6。  
+**来源原文**：教育博客引述 Kang 等（2013）指检索练习优于模仿跟读，Hopman 与 MacDonald（2018）证产出练习提升习得（[WitSpeak](https://witspeak.ai/blog/how-long-to-become-fluent-in-english)6）。综述一致证实任务重复及 4/3/2 递减限时复述能稳健提高语速与流利度，对准确度与复杂度影响呈混合结果（[Cambridge Core](https://www.cambridge.org/core/journals/language-teaching/article/interaction-between-task-repetition-and-oral-task-enjoyment-effects-on-speech-complexity-accuracy-and-fluency/D8C1FD395F5275FF3F3AC2356FB15A45)7，[Saito PDF](http://kazuyasaito.net/LTR2021.pdf)33）。Kroll 与 Stewart（1994）RHM 模型提出低熟练度阶段二语产出先经 L1 翻译中介，高水平后建立直接提取通路，但该双词库假设亦遭联结主义质疑（[BCBL](https://www.bcbl.eu/events/escop2011/conference/verdetalle/1301993338)34，[ResearchGate](https://www.researchgate.net/publication/45441239_The_Revised_Hierarchical_Model_A_critical_review_and_assessment)35）。中译英提示产出、自言自语（仅教学建议与个案36）及口语自动化测度试验**未查到**。  
+**推断**：软件应削减照读，改用图片或英文要点卡激发表达，并嵌入 4/3/2 倒计时压缩停顿。
+
+## **6\. 发音、音标、HVPT 与韵律训练证据及剂量**
+
+**结论**：显性发音、HVPT 与韵律训练具中等以上效应；IPA 独立价值、纯最小对立对、“先音或先韵律”及每日最低分钟数**未查到**直接对照8。  
+**来源原文**：Lee 等（2015，86 项研究）元分析示发音指导呈中大效应，含纠错反馈与多周周期者更佳（[ResearchGate](https://www.researchgate.net/publication/274178849_The_Effectiveness_of_Second_Language_Pronunciation_Instruction_A_Meta-Analysis)39，[LexyLearn](https://lexylearn.com/en/blog/pronunciation-training-sla.html)28）；Yao 等（2025，65 项研究、2,793 人）得语音训练总效应 *d* \= 0.762，感知效应大于产出，数小时针对训练即有中等增益（[ResearchGate](https://www.researchgate.net/publication/389987357_A_Meta-Analysis_of_Second_Language_Phonetic_Training_Exploring_Overall_Effect_and_Moderating_Factors)38）。HVPT 中，Mahdi 与 Mohsen（2024）得总体效应 *g* \= 0.77（辅音声调大、元音小，5–8 名发音人效度中等；[LTRQ PDF](https://eurokd.com/Uploads/Article/691/ltrq.2024.40.02.pdf)8）；博客引述 Sakai 与 Moorman（2017）得感知向产出迁移 *d* \= 0.5428；Uchihara 等（2024，31 项研究）报产出增益 *g* \= 0.49–0.66 但长期与未训词迁移弱，而 Thomson 与 Uchihara（2025，79 篇文献）证感知端在未训词与新说话人上均获约 12%–14% 泛化增益，基线越低进步越大（[Uchihara PDF](https://researchmap.jp/takumiuchihara/published_papers/50374212/attachment_file.pdf)40）。Saito 与 Plonsky（2019）示音段与超音段（重音、节奏、语调）训练均有效，后者直接改善流利度与音高节奏39，且纠音宜优先高功能负荷音对3。IPA 独立效果、纯最小对立对、“先音或先韵律”及每日分钟下限均**未查到**，文献仅支持多周分散练习与先感知后产出28。  
+**推断**：每周可挪约 30 分钟用 5–8 种 TTS 音色练高功能负荷辨音，再借 Whisper 定位重音与停顿。
+
+## **7\. 口语词汇覆盖率与被动词转主动词**
+
+**结论**：日常口语 95% 覆盖约需 2,000–3,000 词族，98% 需 5,000–7,000 词族；已认词转主动核心在高频检索，但专项转化对照试验**未查到**43。  
+**来源原文**：Ha（2022）及文中综述的 Nation（2006）指出，非正式口语（含影视对话）达 95% 覆盖率需 2,000–3,000 词族（Ha 测得影视对话为 3,000），达 98% 需 5,000–7,000 词族（学术口语 95%/98% 为 4,000/8,000），并引述 van Zeeland 与 Schmitt（2013）以 95%/98% 为可接受与最佳听力理解阈值（[PMC](https://pmc.ncbi.nlm.nih.gov/articles/PMC8899723/)44；Adolphs 与 Schmitt 2003 亦被他文引为约 2,000–3,000 词族达 95% 覆盖45）。研究亦证实二语者接受性词汇（[Reading PDF](https://www.reading.ac.uk/elal/-/media/project/uor-main/schools-departments/elal/lswp/lswp-4/elal_lswp_vol_4_pignot_shahov.pdf)47）与搭配知识（[ResearchGate](https://www.researchgate.net/publication/382986123_The_relationship_between_receptive_and_productive_knowledge_of_L2_English_collocations)48）均显著多于产出性知识，口语流利度有赖快速提取词语（[Saito PDF](http://kazuyasaito.net/LLJ2016.pdf)43）。专门对比“阅读词转口语主动词”训练法的实验**未查到**。  
+**推断**：瓶颈在提取不在词量；可让大模型每轮指定 3–5 个你已认识的搭配作必用词，逼出主动输出。
+
+## **8\. 超长期坚持、打卡副作用与习惯机制**
+
+**结论**：复杂习惯养成常跨数月；数年长线中，归零打卡易诱发“破戒违约效应”弃坑，远期倒计时易生焦虑，宜用短里程碑与容错积累37。  
+**来源原文**：Lally 等（2010）追踪 96 人 84 天（39 人拟合良好）得习惯启动达 95% 自动性中位数为 66 天、跨度 18–254 天（运动模型中位数 91 天），漏练单日无实质伤害；解析指出该研究仅测启动自动性，高认知负荷活动仍需意志投入（[Behavioral Scientist](https://www.thebehavioralscientist.com/articles/how-long-to-form-a-habit)49）。Singh 等（2024）整合 20 项研究（2,601 人）得中位数 59–66 天、均值 106–154 天、最长 335 天（[Reset75](https://reset75.com/blog/how-long-to-form-a-habit/)52）。应用/行为博客引述：Kivetz 等（2006）示目标趋近效应（越近终点越加速，预置进度促达成），Gollwitzer 与 Sheeran（2006，94 项研究）证“如果-就”计划提升落实率，Dai 等（2014）提新起点效应，Amabile 与 Kramer（2011）示可见小进步最提动力（[Presence](https://presence-app.now/why.html)50）；Marlatt 与 Gordon（1985）破戒违约效应及后续研究指出断签归零会削弱后续参与（[CoachMoach](https://www.coachmoach.com/blog/the-streak-trap)51，[HabitBuffer](https://www.habitbuffer.com/)53）。多年跨度语言倒计时对照研究**未查到**（DS 社区反映千小时进度条曾致焦虑37）。  
+**推断**：软件应取消归零打卡，改用“永不归零的累计分钟 \+ 每 25 小时/60 天短阶梯进度 \+ 绝不连续漏两天的弹性周目标”。
+
+#### **引用的著作**
+
+> 1. (PDF) Critical Periods \- ResearchGate, [https\://www\.researchgate.net/publication/367049176\_Critical\_Periods](https://www.researchgate.net/publication/367049176_Critical_Periods)  
+> 2. The new scale for Phonological Control \- https: //rm. coe. int, [https\://rm.coe.int/the-new-scale-for-phonological-control-piccardo-/1680788b29](https://rm.coe.int/the-new-scale-for-phonological-control-piccardo-/1680788b29)  
+> 3. The Evolution of Pronunciation Teaching and Research, [https\://www\.asau.ru/files/pdf/3273113.pdf](https://www.asau.ru/files/pdf/3273113.pdf)  
+> 4. Dreaming Spanish Review 2026: Is Premium Worth It?, [https\://copycatcafe.com/blog/dreaming-spanish-review](https://copycatcafe.com/blog/dreaming-spanish-review)  
+> 5. 1150 Hour Dreaming Spanish Review : r/dreamingspanish \- Reddit, [https\://www\.reddit.com/r/dreamingspanish/comments/1vgmenk/1150\_hour\_dreaming\_spanish\_review/](https://www.reddit.com/r/dreamingspanish/comments/1vgmenk/1150_hour_dreaming_spanish_review/)  
+> 6. How Long to Become Fluent in English? Cambridge CEFR Hours, [https\://witspeak.ai/blog/how-long-to-become-fluent-in-english](https://witspeak.ai/blog/how-long-to-become-fluent-in-english)  
+> 7. The interaction between task repetition and oral task enjoyment, [https\://www\.cambridge.org/core/journals/language-teaching/article/interaction-between-task-repetition-and-oral-task-enjoyment-effects-on-speech-complexity-accuracy-and-fluency/D8C1FD395F5275FF3F3AC2356FB15A45](https://www.cambridge.org/core/journals/language-teaching/article/interaction-between-task-repetition-and-oral-task-enjoyment-effects-on-speech-complexity-accuracy-and-fluency/D8C1FD395F5275FF3F3AC2356FB15A45)  
+> 8. Enhancing Pronunciation Learning through High Variability ... \- Eurokd, [https\://eurokd.com/Uploads/Article/691/ltrq.2024.40.02.pdf](https://eurokd.com/Uploads/Article/691/ltrq.2024.40.02.pdf)  
+> 9. Guided learning hours \- Cambridge English Support Site, [https\://support.cambridgeenglish.org/hc/en-gb/articles/202838506-Guided-learning-hours](https://support.cambridgeenglish.org/hc/en-gb/articles/202838506-Guided-learning-hours)  
+> 10. Foreign Language Training \- U.S. Department of State, [https\://www\.state.gov/national-foreign-affairs-training-center/foreign-language-training](https://www.state.gov/national-foreign-affairs-training-center/foreign-language-training)  
+> 11. [unknown\_url](http://docs.google.com/unknown_url)  
+> 12. (PDF) Critical Period Claim Revisited: Reanalysis of Hartshorne, [https\://www\.researchgate.net/publication/354403923\_Critical\_Period\_Claim\_Revisited\_Reanalysis\_of\_Hartshorne\_Tenenbaum\_and\_Pinker\_2018\_Suggests\_Steady\_Decline\_and\_Learner-Type\_Differences](https://www.researchgate.net/publication/354403923_Critical_Period_Claim_Revisited_Reanalysis_of_Hartshorne_Tenenbaum_and_Pinker_2018_Suggests_Steady_Decline_and_Learner-Type_Differences)  
+> 13. A critical period for second language acquisition \- Steven Pinker, [https\://stevenpinker.com/publications/critical-period-second-language-acquisition-evidence-23-million-english-speakers](https://stevenpinker.com/publications/critical-period-second-language-acquisition-evidence-23-million-english-speakers)  
+> 14. A critical period for second language acquisition: Evidence from 2/3, [https\://www\.researchgate.net/publication/324895243\_A\_critical\_period\_for\_second\_language\_acquisition\_Evidence\_from\_23\_million\_English\_speakers](https://www.researchgate.net/publication/324895243_A_critical_period_for_second_language_acquisition_Evidence_from_23_million_English_speakers)  
+> 15. Accent, Comprehensibility, and Intelligibility \| PDF \- Scribd, [https\://www\.scribd.com/document/928745092/Munro-and-Derwing-1995-Foreign-Accent-Comprehensibility-And-Intelligibility-in-the-Speech-of-Second-Language-Learners](https://www.scribd.com/document/928745092/Munro-and-Derwing-1995-Foreign-Accent-Comprehensibility-And-Intelligibility-in-the-Speech-of-Second-Language-Learners)  
+> 16. Preparing for a Cambridge English exam, [https\://support.cambridgeenglish.org/hc/en-gb/sections/200560966-Preparing-for-a-Cambridge-English-exam](https://support.cambridgeenglish.org/hc/en-gb/sections/200560966-Preparing-for-a-Cambridge-English-exam)  
+> 17. How Long Does It Take To Learn A Language? \| Cambridge English, [https\://www\.cambridge.org/elt/blog/2018/10/11/how-long-learn-language/](https://www.cambridge.org/elt/blog/2018/10/11/how-long-learn-language/)  
+> 18. How Long Does It Take to Learn Chinese? Hours and Timelines, [https\://studycli.org/learn-chinese/how-long-does-it-take-to-learn-chinese/](https://studycli.org/learn-chinese/how-long-does-it-take-to-learn-chinese/)  
+> 19. Dreaming Spanish Roadmap: 7 Levels, 0–1,500 Hours \| LingoKeep, [https\://lingokeep.com/blog/dreaming-spanish-roadmap](https://lingokeep.com/blog/dreaming-spanish-roadmap)  
+> 20. Comprehensible Input: The 1,500-Hour Bill Nobody Shows You, [https\://audazrevista.com/comprehensible-input-spanish/](https://audazrevista.com/comprehensible-input-spanish/)  
+> 21. How long does it take to learn English? \| choices®, [https\://choices-global.com/en/articles/how-long-does-it-take-to-learn-english/](https://choices-global.com/en/articles/how-long-does-it-take-to-learn-english/)  
+> 22. Level 7 Update—1500h listening, 2.5 million words read, 220 hours, [https\://www\.reddit.com/r/dreamingspanish/comments/1mmrshd/level\_7\_update1500h\_listening\_25\_million\_words/](https://www.reddit.com/r/dreamingspanish/comments/1mmrshd/level_7_update1500h_listening_25_million_words/)  
+> 23. The four strands \- Victoria University of Wellington, [https\://www\.wgtn.ac.nz/lals/resources/paul-nations-resources/paul-nations-publications/publications/documents/2007-Four-strands.pdf](https://www.wgtn.ac.nz/lals/resources/paul-nations-resources/paul-nations-publications/publications/documents/2007-Four-strands.pdf)  
+> 24. Analyse and balance your Chinese learning with Paul Nation's four, [https\://www\.hackingchinese.com/analyse-and-balance-your-chinese-learning-with-paul-nations-four-strands/](https://www.hackingchinese.com/analyse-and-balance-your-chinese-learning-with-paul-nations-four-strands/)  
+> 25. APPLYING THE FOUR STRANDS TO LANGUAGE LEARNING, [https\://profgwhitehead.weebly.com/uploads/4/7/9/3/47931813/yamamoto-four-strands\_1.pdf](https://profgwhitehead.weebly.com/uploads/4/7/9/3/47931813/yamamoto-four-strands_1.pdf)  
+> 26. explicit-teaching-complex-rules-only-advantage.md \- GitHub, [https\://github.com/Learning-Design-Alliance/learning-wiki/blob/main/claims/explicit-teaching-complex-rules-only-advantage.md](https://github.com/Learning-Design-Alliance/learning-wiki/blob/main/claims/explicit-teaching-complex-rules-only-advantage.md)  
+> 27. A Research Synthesis and Quantitative Meta-analysis \- ResearchGate, [https\://www\.researchgate.net/publication/228003219\_Effectiveness\_of\_L2\_Instruction\_A\_Research\_Synthesis\_and\_Quantitative\_Meta-analysis](https://www.researchgate.net/publication/228003219_Effectiveness_of_L2_Instruction_A_Research_Synthesis_and_Quantitative_Meta-analysis)  
+> 28. Adult Pronunciation Training: Evidence from 86 Studies \| Lexy Blog, [https\://lexylearn.com/en/blog/pronunciation-training-sla.html](https://lexylearn.com/en/blog/pronunciation-training-sla.html)  
+> 29. The Justification for Explicit Grammar Instruction is Overstated, [https\://www\.mextesol.net/journal/index.php?page=journal\&id\_article=46438](https://www.mextesol.net/journal/index.php?page=journal&id_article=46438)  
+> 30. Explicit Versus Implicit Instruction: A Meta-Analysis of Comparative, [https\://www\.researchgate.net/publication/347408013\_Explicit\_Versus\_Implicit\_Instruction\_A\_Meta-Analysis\_of\_Comparative\_Studies](https://www.researchgate.net/publication/347408013_Explicit_Versus_Implicit_Instruction_A_Meta-Analysis_of_Comparative_Studies)  
+> 31. How Many Months Does It Take to Learn English? \- Flalingo, [https\://flalingo.com/en/blogs/online-english-with-flalingo/how-long-to-learn-english-in-months](https://flalingo.com/en/blogs/online-english-with-flalingo/how-long-to-learn-english-in-months)  
+> 32. Meta-analysis in Second Language Research: Choices and, [https\://www\.cambridge.org/core/journals/annual-review-of-applied-linguistics/article/metaanalysis-in-second-language-research-choices-and-challenges/C602E719CFA34B2BC426B68FA4560CAF](https://www.cambridge.org/core/journals/annual-review-of-applied-linguistics/article/metaanalysis-in-second-language-research-choices-and-challenges/C602E719CFA34B2BC426B68FA4560CAF)  
+> 33. Effects of the 4/3/2 Activity Revisited: Extending Boers (2014) and, [http\://kazuyasaito.net/LTR2021.pdf](http://kazuyasaito.net/LTR2021.pdf)  
+> 34. SY\_29. L1 influences on L2 revisited \- BCBL, [https\://www\.bcbl.eu/events/escop2011/conference/verdetalle/1301993338](https://www.bcbl.eu/events/escop2011/conference/verdetalle/1301993338)  
+> 35. The Revised Hierarchical Model: A critical review and assessment, [https\://www\.researchgate.net/publication/45441239\_The\_Revised\_Hierarchical\_Model\_A\_critical\_review\_and\_assessment](https://www.researchgate.net/publication/45441239_The_Revised_Hierarchical_Model_A_critical_review_and_assessment)  
+> 36. How to Encourage ESL Students to Think in English \- EFLCafe.net, [https\://eflcafe.net/how-to-encourage-esl-students-to-think-in-english](https://eflcafe.net/how-to-encourage-esl-students-to-think-in-english)  
+> 37. 4 years, 6 months, 1,500 hours: Level 7 Update : r/dreamingspanish, [https\://www\.reddit.com/r/dreamingspanish/comments/1iczlpi/4\_years\_6\_months\_1500\_hours\_level\_7\_update/](https://www.reddit.com/r/dreamingspanish/comments/1iczlpi/4_years_6_months_1500_hours_level_7_update/)  
+> 38. A Meta-Analysis of Second Language Phonetic Training, [https\://www\.researchgate.net/publication/389987357\_A\_Meta-Analysis\_of\_Second\_Language\_Phonetic\_Training\_Exploring\_Overall\_Effect\_and\_Moderating\_Factors](https://www.researchgate.net/publication/389987357_A_Meta-Analysis_of_Second_Language_Phonetic_Training_Exploring_Overall_Effect_and_Moderating_Factors)  
+> 39. The Effectiveness of Second Language Pronunciation Instruction, [https\://www\.researchgate.net/publication/274178849\_The\_Effectiveness\_of\_Second\_Language\_Pronunciation\_Instruction\_A\_Meta-Analysis](https://www.researchgate.net/publication/274178849_The_Effectiveness_of_Second_Language_Pronunciation_Instruction_A_Meta-Analysis)  
+> 40. High variability phonetic training (HVPT): A meta-analysis of L2, [https\://researchmap.jp/takumiuchihara/published\_papers/50374212/attachment\_file.pdf](https://researchmap.jp/takumiuchihara/published_papers/50374212/attachment_file.pdf)  
+> 41. meta-analysis of corpus-based approaches in phonology: trends, [https\://ojs.mul.edu.pk/index.php/jacor/article/download/800/616/4417](https://ojs.mul.edu.pk/index.php/jacor/article/download/800/616/4417)  
+> 42. Pronunciation development and instruction in distance language, [https\://www\.researchgate.net/publication/394590472\_Pronunciation\_development\_and\_instruction\_in\_distance\_language\_learning](https://www.researchgate.net/publication/394590472_Pronunciation_development_and_instruction_in_distance_language_learning)  
+> 43. Exploring the relationship between productive vocabulary, [http\://kazuyasaito.net/LLJ2016.pdf](http://kazuyasaito.net/LLJ2016.pdf)  
+> 44. [https\://pmc.ncbi.nlm.nih.gov/articles/PMC8899723/](https://pmc.ncbi.nlm.nih.gov/articles/PMC8899723/)  
+> 45. Lexical Coverage of Spoken Discourse \- ResearchGate, [https\://www\.researchgate.net/publication/249237921\_Lexical\_Coverage\_of\_Spoken\_Discourse](https://www.researchgate.net/publication/249237921_Lexical_Coverage_of_Spoken_Discourse)  
+> 46. The word-frequency curve: why 650 words does so much · Verbamor, [https\://verbamor.com/blog/frequency-curve](https://verbamor.com/blog/frequency-curve)  
+> 47. Measuring L2 Receptive and Productive Vocabulary Knowledge, [https\://www\.reading.ac.uk/elal/-/media/project/uor-main/schools-departments/elal/lswp/lswp-4/elal\_lswp\_vol\_4\_pignot\_shahov.pdf](https://www.reading.ac.uk/elal/-/media/project/uor-main/schools-departments/elal/lswp/lswp-4/elal_lswp_vol_4_pignot_shahov.pdf)  
+> 48. The relationship between receptive and productive knowledge of L2, [https\://www\.researchgate.net/publication/382986123\_The\_relationship\_between\_receptive\_and\_productive\_knowledge\_of\_L2\_English\_collocations](https://www.researchgate.net/publication/382986123_The_relationship_between_receptive_and_productive_knowledge_of_L2_English_collocations)  
+> 49. How Long Does It Take to Form a Habit? What Lally et al. (2010, [https\://www\.thebehavioralscientist.com/articles/how-long-to-form-a-habit](https://www.thebehavioralscientist.com/articles/how-long-to-form-a-habit)  
+> 50. Why it works — Presence, [https\://presence-app.now/why.html](https://presence-app.now/why.html)  
+> 51. Workout Streak Broken? Why One Miss Makes You Quit, [https\://www\.coachmoach.com/blog/the-streak-trap](https://www.coachmoach.com/blog/the-streak-trap)  
+> 52. How Long to Form a Habit? The Real Science \- Reset75, [https\://reset75.com/blog/how-long-to-form-a-habit/](https://reset75.com/blog/how-long-to-form-a-habit/)  
+> 53. HabitBuffer \- Habit Tracking App, [https\://www\.habitbuffer.com/](https://www.habitbuffer.com/)
