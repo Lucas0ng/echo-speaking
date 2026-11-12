@@ -35,7 +35,8 @@ TRANS = DATA / "transcripts"
 RECS = DATA / "recordings"
 AI_CACHE = DATA / "ai_cache"
 MEDIA_CACHE = DATA / "media"
-for d in (DATA, TRANS, RECS, AI_CACHE, MEDIA_CACHE):
+TTS_CACHE = DATA / "tts"
+for d in (DATA, TRANS, RECS, AI_CACHE, MEDIA_CACHE, TTS_CACHE):
     d.mkdir(parents=True, exist_ok=True)
 CFG_PATH = ROOT / "config.json"
 STATE_PATH = DATA / "progress.json"
@@ -48,8 +49,30 @@ DEFAULT_CFG = {
         "deepseek": {"label": "DeepSeek", "base_url": "https://api.deepseek.com", "api_key": "", "model": "deepseek-flash"},
         "glm": {"label": "GLM（智谱）", "base_url": "https://open.bigmodel.cn/api/paas/v4", "api_key": "", "model": ""},
         "omni": {"label": "Qwen-Omni（百炼，听音频）", "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1", "api_key": "", "model": "qwen3.8-omni-flash"},
+        "tts": {"label": "百炼语音合成", "base_url": "https://dashscope.aliyuncs.com/api/v1", "api_key": "", "model": "qwen-audio-3.1-tts-flash", "voice": "Ava_v3.1", "on": False},
     },
 }
+
+# English-only voices of qwen-audio-3.1-tts-flash, from the Bailian voice list ("精品英文音色"). American first.
+TTS_VOICES = [
+    {"id": "Ava_v3.1", "label": "Ava · 美式女声"},
+    {"id": "Abby_v3.1", "label": "Abby · 美式女声"},
+    {"id": "Annie_v3.1", "label": "Annie · 美式女声"},
+    {"id": "Beth_v3.1", "label": "Beth · 美式女声"},
+    {"id": "Betty_v3.1", "label": "Betty · 美式女声"},
+    {"id": "Cally_v3.1", "label": "Cally · 美式女声"},
+    {"id": "Cindy_v3.1", "label": "Cindy · 美式女声"},
+    {"id": "Donna_v3.1", "label": "Donna · 美式女声"},
+    {"id": "Andy_v3.1", "label": "Andy · 美式男声"},
+    {"id": "Brian_v3.1", "label": "Brian · 美式男声"},
+    {"id": "David_v3.1", "label": "David · 美式男声"},
+    {"id": "Emily_v3.1", "label": "Emily · 英式女声"},
+    {"id": "Luna_v3.1", "label": "Luna · 英式女声"},
+    {"id": "Eric_v3.1", "label": "Eric · 英式男声"},
+    {"id": "Luca_v3.1", "label": "Luca · 英式男声"},
+]
+TTS_DEFAULT_VOICE = "Ava_v3.1"
+TTS_DEFAULT_MODEL = "qwen-audio-3.1-tts-flash"
 
 
 def load_cfg() -> dict:
@@ -1021,6 +1044,150 @@ async def chat_completion(p: dict, messages: list, want_json: bool, stream: bool
         raise HTTPException(502, f"连不上 {p.get('label')}：{e.__class__.__name__}。检查网络和接口地址。")
 
 
+# ---------------------------------------------------------------- TTS
+# Qwen3-TTS 非实时 HTTP：POST {base_url}/services/aigc/multimodal-generation/generation
+# body: {"model": "qwen3-tts-flash", "input": {"text": ..., "voice": ..., "language_type": "English"}}
+# 返回 output.audio.url（24 小时有效，wav）或 output.audio.data（Base64）。
+TTS_PATH = "/services/aigc/multimodal-generation/generation"
+
+
+def tts_conf(require_on: bool = True) -> dict:
+    """The TTS provider, falling back to the Qwen-Omni key when its own key is blank."""
+    p = CFG["providers"].get("tts") or {}
+    if require_on and not p.get("on"):
+        raise HTTPException(400, "还没有开启百炼语音合成。请到「设置 › 朗读声音」里切到百炼语音合成。")
+    key = str(p.get("api_key") or "").strip()
+    if not key:
+        key = str((CFG["providers"].get("omni") or {}).get("api_key") or "").strip()
+    if not key:
+        raise HTTPException(400, "百炼语音合成没有可用的 API key。请在设置里填写，或先配好 Qwen-Omni 的 key。")
+    return {
+        "api_key": key,
+        "base_url": str(p.get("base_url") or "https://dashscope.aliyuncs.com/api/v1").strip().rstrip("/"),
+        "model": str(p.get("model") or TTS_DEFAULT_MODEL).strip() or TTS_DEFAULT_MODEL,
+        "voice": str(p.get("voice") or TTS_DEFAULT_VOICE).strip() or TTS_DEFAULT_VOICE,
+    }
+
+
+_TTS_MIME = {
+    ".wav": "audio/wav",
+    ".mp3": "audio/mpeg",
+    ".ogg": "audio/ogg",
+    ".m4a": "audio/mp4",
+    ".aac": "audio/aac",
+    ".webm": "audio/webm",
+}
+
+
+def _tts_audio_type(raw: bytes, content_type: str = "", url: str = "") -> tuple[str, str]:
+    """Trust the bytes first, then Content-Type / URL, so a cached file gets a playable MIME type."""
+    ct = (content_type or "").split(";")[0].strip().lower()
+    ct_map = {
+        "audio/wav": "wav", "audio/x-wav": "wav", "audio/wave": "wav",
+        "audio/mpeg": "mp3", "audio/mp3": "mp3", "audio/ogg": "ogg",
+        "audio/mp4": "m4a", "audio/aac": "aac", "audio/webm": "webm",
+    }
+    if ct in ct_map:
+        ext = ct_map[ct]
+    elif raw[:4] == b"RIFF" and raw[8:12] == b"WAVE":
+        ext = "wav"
+    elif raw[:4] == b"OggS":
+        ext = "ogg"
+    elif raw[:3] == b"ID3" or (len(raw) > 1 and raw[0] == 0xFF and (raw[1] & 0xE0) == 0xE0):
+        ext = "mp3"
+    elif raw[4:8] == b"ftyp":
+        ext = "m4a"
+    else:
+        ext = ""
+    if not ext:
+        tail = url.split("?", 1)[0].rsplit(".", 1)[-1].lower() if "." in url.split("?", 1)[0] else ""
+        ext = tail if tail in ("wav", "mp3", "ogg", "m4a", "aac", "webm") else "wav"
+    suffix = "." + ext
+    return ext, _TTS_MIME.get(suffix, "audio/wav")
+
+
+def _tts_cached(digest: str) -> tuple[Path, str] | None:
+    for suffix, mime in _TTS_MIME.items():
+        p = TTS_CACHE / (digest + suffix)
+        if p.exists() and p.stat().st_size:
+            return p, mime
+    return None
+
+
+async def tts_audio(text: str, voice: str, model: str, base_url: str, key: str, use_cache: bool = True) -> tuple[Path, str]:
+    """Synthesize via Qwen3-TTS and cache the audio under data/tts/<sha256(model+voice+text)>."""
+    digest = hashlib.sha256(json.dumps([model, voice, text], ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()
+    if use_cache:
+        hit = _tts_cached(digest)
+        if hit:
+            return hit
+
+    # Qwen-Audio-TTS (the current model) and the older Qwen3-TTS sit behind different paths and take different inputs.
+    if model.startswith("qwen-audio"):
+        url = base_url + "/services/audio/tts/SpeechSynthesizer"
+        body = {"model": model, "input": {"text": text, "voice": voice, "format": "wav", "sample_rate": 24000}}
+    else:
+        url = base_url + TTS_PATH
+        body = {"model": model, "input": {"text": text, "voice": voice, "language_type": "English"}}
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    # trust_env=False: a malformed NO_PROXY entry with IPv6 can make httpx reject every client in this environment.
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(20, connect=10), trust_env=False) as c:
+            r = await c.post(url, json=body, headers=headers)
+            if r.status_code >= 400:
+                detail, code = "", ""
+                try:
+                    j = r.json()
+                    code = str(j.get("code") or "")
+                    detail = str(j.get("message") or code or "")
+                except Exception:
+                    detail = r.text[:200]
+                if code == "AllocationQuota.FreeTierOnly":
+                    detail = "百炼账号的免费额度已用完，请充值，或在百炼控制台关闭「仅使用免费额度」模式。"
+                elif code == "InvalidApiKey":
+                    detail = "百炼 API key 无效，请重新填写。"
+                detail = re.sub(r"sk-[A-Za-z0-9_-]+", "sk-***", detail)[:200]
+                raise HTTPException(502, f"百炼语音合成失败（{r.status_code}）：{detail or '接口返回错误'}")
+            try:
+                data = r.json()
+            except ValueError:
+                raise HTTPException(502, "百炼语音合成返回的不是 JSON。")
+            if not isinstance(data, dict):
+                raise HTTPException(502, "百炼语音合成返回的格式不对。")
+            audio = (data.get("output") or {}).get("audio") or {}
+            audio_url = str(audio.get("url") or "")
+            b64 = str(audio.get("data") or "")
+            content_type = ""
+            if audio_url:
+                a = await c.get(audio_url)
+                if a.status_code >= 400:
+                    raise HTTPException(502, f"下载百炼合成音频失败（{a.status_code}）。")
+                raw, content_type = a.content, a.headers.get("content-type", "")
+            elif b64:
+                raw = base64.b64decode(b64.split(",", 1)[-1])
+            else:
+                raise HTTPException(502, "百炼没有返回音频，请稍后再试。")
+    except HTTPException:
+        raise
+    except httpx.TimeoutException:
+        raise HTTPException(502, "百炼语音合成超时（20 秒），请稍后再试。")
+    except httpx.InvalidURL:
+        raise HTTPException(502, "百炼语音合成的接口地址不对，请检查设置。")
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"连不上百炼语音合成：{e.__class__.__name__}。检查网络后重试。")
+    except (ValueError, base64.binascii.Error):
+        raise HTTPException(502, "百炼返回的音频数据解不开。")
+
+    if not raw:
+        raise HTTPException(502, "百炼返回了空音频，请稍后再试。")
+    ext, mime = _tts_audio_type(raw, content_type, audio_url)
+    path = TTS_CACHE / f"{digest}.{ext}"
+    tmp = TTS_CACHE / f".{digest}.{os.getpid()}.{time.time_ns()}.tmp"
+    tmp.write_bytes(raw)
+    tmp.replace(path)
+    return path, mime
+
+
 # ---------------------------------------------------------------- app
 app = FastAPI()
 
@@ -1029,6 +1196,31 @@ app = FastAPI()
 def api_dict(w: str = ""):
     """Offline ECDICT entry for a word, with its dictionary form when it is inflected."""
     return dict_lookup(w)
+
+
+@app.post("/api/tts")
+async def api_tts(req: Request):
+    mark_active()
+    try:
+        body = await req.json()
+    except ValueError:
+        raise HTTPException(400, "请求格式不对，需要 JSON。")
+    if not isinstance(body, dict):
+        raise HTTPException(400, "请求格式不对，需要 JSON 对象。")
+    text = str(body.get("text") or "").strip()
+    if not text:
+        raise HTTPException(400, "要朗读的文字是空的。")
+    if len(text) > 600:
+        raise HTTPException(400, f"一次最多朗读 600 个字符（现在是 {len(text)} 个），请分段。")
+    p = tts_conf()
+    voice = str(body.get("voice") or p["voice"]).strip() or p["voice"]
+    path, mime = await tts_audio(text, voice, p["model"], p["base_url"], p["api_key"])
+    return FileResponse(path, media_type=mime)
+
+
+@app.get("/api/tts/voices")
+def api_tts_voices():
+    return {"voices": TTS_VOICES}
 
 
 @app.get("/api/lessons")
@@ -1354,8 +1546,12 @@ def api_export_anki():
 
 def masked(cfg: dict) -> dict:
     out = json.loads(json.dumps(cfg))
-    for p in out["providers"].values():
-        k = p.get("api_key", "")
+    omni_key = str((out["providers"].get("omni") or {}).get("api_key") or "")
+    for name, p in out["providers"].items():
+        k = str(p.get("api_key") or "")
+        if name == "tts" and not k and omni_key:
+            k = omni_key
+            p["key_source"] = "omni"  # the effective key comes from Qwen-Omni, not from a separate TTS key
         p["has_key"] = bool(k)
         p["api_key"] = ("••••" + k[-4:]) if k else ""
     return out
@@ -1373,9 +1569,11 @@ async def api_config_save(req: Request):
         CFG["text_provider"] = body["text_provider"]
     for name, pv in (body.get("providers") or {}).items():
         dst = CFG["providers"].setdefault(name, {})
-        for k in ("base_url", "model"):
+        for k in ("base_url", "model", "voice"):
             if k in pv:
                 dst[k] = str(pv[k]).strip()
+        if "on" in pv:
+            dst["on"] = bool(pv["on"])
         if pv.get("api_key") and not str(pv["api_key"]).startswith("••••"):
             dst["api_key"] = str(pv["api_key"]).strip()
         if pv.get("clear_key"):
@@ -1387,6 +1585,10 @@ async def api_config_save(req: Request):
 @app.post("/api/config/test")
 async def api_config_test(req: Request):
     name = (await req.json()).get("provider")
+    if name == "tts":
+        p = tts_conf(require_on=False)
+        path, _ = await tts_audio("Hello, this is a voice test.", p["voice"], p["model"], p["base_url"], p["api_key"], use_cache=False)
+        return {"ok": True, "reply": f"语音合成成功（{max(1, path.stat().st_size // 1024)} KB）"}
     p = provider(name)
     if name == "omni":
         # tiny audio: 0.5 s of silence
@@ -1441,6 +1643,10 @@ def api_usage():
 @app.get("/api/status")
 def api_status():
     done = sum(1 for l in LESSONS if tpath(l["f"]).exists())
+    tts = CFG["providers"].get("tts") or {}
+    tts_key = str(tts.get("api_key") or "").strip() or str((CFG["providers"].get("omni") or {}).get("api_key") or "").strip()
+    providers = {k: bool(v.get("api_key")) and bool(v.get("model")) for k, v in CFG["providers"].items()}
+    providers["tts"] = bool(tts_key) and bool(tts.get("model"))
     return {
         "lessons": len(LESSONS),
         "ielts_transcribed": done,
@@ -1448,7 +1654,8 @@ def api_status():
         "paused": time.time() - LAST_ACTIVE[0] < IDLE_BEFORE_BACKGROUND,
         "running": [k for k, v in JOB_STATE.items() if v == "running"],
         "whisper": WHISPER,
-        "providers": {k: bool(v.get("api_key")) and bool(v.get("model")) for k, v in CFG["providers"].items()},
+        "providers": providers,
+        "tts": {"on": bool(tts.get("on")) and bool(tts_key), "voice": str(tts.get("voice") or TTS_DEFAULT_VOICE)},
         "text_provider": CFG.get("text_provider"),
         "lesson_error": LESSON_ERR,
     }

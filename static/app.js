@@ -116,23 +116,71 @@ function pickVoice() {
     || VOICES.find(v => /en-US/i.test(v.lang) && /(Samantha|Ava|Allison|Zoe|Evan|Nathan)/i.test(v.name))
     || VOICES.find(v => /en-(US|GB)/i.test(v.lang)) || VOICES[0];
 }
-let speakingBtn = null;
-function say(text, btn) {
-  if (!('speechSynthesis' in window) || !text) return;
-  speechSynthesis.cancel(); pauseAll();
+let speakingBtn = null, sayAudio = null, sayTok = 0;
+const TTS_CLIPS = new Map(); // voice + text -> blob URL, kept for this page session
+function sayDone(btn, tok) {
+  if (tok !== sayTok) return;
+  btn?.classList.remove('speaking');
+  if (speakingBtn === btn) speakingBtn = null;
+}
+function stopSay() {
+  sayTok++;
+  if (sayAudio) { try { sayAudio.pause(); } catch {} sayAudio = null; }
   speakingBtn?.classList.remove('speaking');
-  if (btn && speakingBtn === btn) { speakingBtn = null; return; }
-  speakingBtn = btn || null; btn?.classList.add('speaking');
+  speakingBtn = null;
+}
+function systemSay(text, btn, tok) {
+  if (!('speechSynthesis' in window) || tok !== sayTok) { sayDone(btn, tok); return; }
   const parts = text.match(/[^.!?]+[.!?]+["')\]]*\s*|[^.!?]+$/g) || [text];
   let i = 0;
   const next = () => {
-    if (i >= parts.length) { btn?.classList.remove('speaking'); if (speakingBtn === btn) speakingBtn = null; return; }
+    if (tok !== sayTok) return;
+    if (i >= parts.length) { sayDone(btn, tok); return; }
     const u = new SpeechSynthesisUtterance(parts[i++].trim());
     const v = pickVoice(); if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'en-US';
-    u.rate = S.prefs.ttsRate; u.onend = next; u.onerror = () => btn?.classList.remove('speaking');
+    u.rate = S.prefs.ttsRate; u.onend = next; u.onerror = () => sayDone(btn, tok);
     speechSynthesis.speak(u);
   };
   next();
+}
+async function playTTS(text, btn, tok) {
+  const voice = STATUS.tts?.voice || '';
+  const key = voice + '\n' + text, cached = TTS_CLIPS.get(key);
+  let url = cached;
+  if (!url) {
+    let r;
+    try { r = await fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, voice }) }); }
+    catch { throw new Error('tts'); }
+    if (tok !== sayTok) return;
+    if (!r.ok) throw new Error('tts');
+    const blob = await r.blob();
+    if (tok !== sayTok) return;
+    if (!blob.size) throw new Error('tts');
+    url = URL.createObjectURL(blob); TTS_CLIPS.set(key, url);
+  }
+  if (tok !== sayTok) return;
+  const a = new Audio(url);
+  a.playbackRate = S.prefs.ttsRate || 1;
+  sayAudio = a;
+  a.onended = () => { if (sayAudio === a) { sayAudio = null; sayDone(btn, tok); } };
+  try { await a.play(); }
+  catch (e) { if (sayAudio === a) sayAudio = null; throw e; }
+}
+function say(text, btn) {
+  if (!text) return;
+  const same = !!btn && speakingBtn === btn;
+  pauseAll(); // stops the previous clip/Audio and invalidates any request still in flight
+  try { speechSynthesis.cancel(); } catch {}
+  if (same) return;
+  const tok = ++sayTok;
+  speakingBtn = btn || null; btn?.classList.add('speaking');
+  if (STATUS.tts?.on) {
+    playTTS(text, btn, tok).catch(() => { // any failure: silently fall back to the system voice
+      if (tok !== sayTok) return;
+      if (sayAudio) { try { sayAudio.pause(); } catch {} sayAudio = null; }
+      systemSay(text, btn, tok);
+    });
+  } else systemSay(text, btn, tok);
 }
 function sayBtn(text, label = '朗读') { const b = h('button', { class: 'btn ghost icon-btn', title: label, 'aria-label': label }, ic('speak')); b.onclick = () => say(text, b); return b; }
 
@@ -174,8 +222,18 @@ function aud(path) {
   return AUDS.get(path);
 }
 let segTok = 0, mine = null;
-function pauseAll(except) { for (const a of [...AUDS.values(), ...$$('audio')]) if (a !== except) a.pause(); if (mine && mine !== except) mine.pause(); }
-document.addEventListener('play', e => { segTok++; for (const a of [...AUDS.values(), ...$$('audio')]) if (a !== e.target) a.pause(); if (mine) mine.pause(); try { speechSynthesis.cancel(); } catch {} }, true);
+function pauseAll(except) {
+  for (const a of [...AUDS.values(), ...$$('audio')]) if (a !== except) a.pause();
+  if (mine && mine !== except) mine.pause();
+  stopSay(); // also invalidates an in-flight /api/tts request and clears the button highlight
+}
+document.addEventListener('play', e => {
+  segTok++;
+  for (const a of [...AUDS.values(), ...$$('audio')]) if (a !== e.target) a.pause();
+  if (mine) mine.pause();
+  if (sayAudio !== e.target) stopSay(); // another sound started: invalidate a TTS request that is still in flight
+  try { speechSynthesis.cancel(); } catch {}
+}, true);
 const NATIVE = new Map();
 function nativeAudio(path) { if (!NATIVE.has(path)) NATIVE.set(path, h('audio', { class: 'native', controls: true, preload: 'metadata', src: '/api/media?path=' + encodeURIComponent(path) })); return NATIVE.get(path); }
 function stopEverything() { segTok++; pauseAll(); try { speechSynthesis.cancel(); } catch {} }
@@ -2571,12 +2629,35 @@ async function renderSettings() {
     h('div', { class: 'progress' }, h('i', { style: 'width:' + pct + '%' })),
     h('div', { class: 'row' }, h('button', { class: 'btn', onclick: async () => { const r = await post('/api/transcribe_all', {}); alertBox('已加入 ' + r.queued + ' 个文件，后台慢慢转写。'); renderSettings(); } }, '把全部课程音频加入转写队列'))));
   // voice
+  const tts = CFG.providers.tts || {};
+  const tv = await api('/api/tts/voices').catch(() => null);
+  const ttsVoices = tv?.voices?.length ? tv.voices : [{ id: tts.voice || 'Ava_v3.1', label: '美式女声' }];
+  const ttsMsg = h('p', { class: 'hint' });
+  if (tts.on && !STATUS.tts?.on) ttsMsg.textContent = '还没有可用的百炼 key，会暂时退回系统声音。';
+  const ttsSwitch = seg(['system', 'bailian'], tts.on ? 'bailian' : 'system', async v => {
+    try {
+      CFG = await post('/api/config', { providers: { tts: { on: v === 'bailian' } } });
+      STATUS = await api('/api/status');
+      renderSettings();
+    } catch (e) { ttsMsg.textContent = e.message; }
+  }, v => (v === 'system' ? '系统声音' : '百炼语音合成'));
+  const ttsSel = h('select', { id: 'ttsVoice', disabled: !tts.on, onchange: async e => {
+    try {
+      CFG = await post('/api/config', { providers: { tts: { voice: e.target.value } } });
+      STATUS = await api('/api/status'); ttsMsg.textContent = '已保存。';
+    } catch (err) { ttsMsg.textContent = err.message; }
+  } }, ttsVoices.map(v => h('option', { value: v.id, selected: v.id === (tts.voice || 'Ava_v3.1') }, v.label)));
   const vsel = h('select', { id: 'voiceSel', onchange: e => { S.prefs.voice = e.target.value; save(); } }, h('option', { value: '' }, '自动选择'), VOICES.map(v => h('option', { value: v.voiceURI, selected: v.voiceURI === S.prefs.voice }, v.name + ' (' + v.lang + ')')));
   const rv = h('span', { class: 'mono', text: S.prefs.ttsRate.toFixed(2) + '×' });
-  frag.push(h('div', { class: 'prov' }, h('h3', { text: '朗读声音' }), h('label', {}, 'AI 文字的朗读声音（来自 macOS）', vsel),
+  frag.push(h('div', { class: 'prov' }, h('h3', { text: '朗读声音' }),
+    h('label', { class: 'row' }, ttsSwitch),
+    h('label', {}, '百炼音色', ttsSel),
+    h('div', { class: 'row' }, h('button', { class: 'btn', onclick: e => say("I'd like a coffee, please. Is that for here or to go?", e.currentTarget) }, ic('speak'), '试听')),
+    h('p', { class: 'hint', text: '开启后用百炼的 key，每万字符约 1 元，固定句子只在第一次生成时联网。' }),
+    h('label', {}, '系统声音（百炼关闭时使用）', vsel),
     h('label', {}, h('span', {}, '朗读速度 ', rv), h('input', { type: 'range', min: 0.6, max: 1.2, step: 0.05, value: S.prefs.ttsRate, oninput: e => { S.prefs.ttsRate = +e.target.value; rv.textContent = (+e.target.value).toFixed(2) + '×'; }, onchange: save })),
-    h('div', { class: 'row' }, h('button', { class: 'btn', onclick: e => say("Hi! This is how I sound. Let's practise speaking every day.", e.currentTarget) }, ic('speak'), '试听')),
-    h('p', { class: 'hint', text: '想要更自然的声音：系统设置 › 辅助功能 › 朗读内容 › 系统声音 › 管理声音，下载英语的「Ava（高级）」或「Zoe（高级）」，然后回来选它。' })));
+    h('p', { class: 'hint', text: '想要更自然的系统声音：系统设置 › 辅助功能 › 朗读内容 › 系统声音 › 管理声音，下载英语的「Ava（高级）」或「Zoe（高级）」，然后回来选它。' }),
+    ttsMsg));
   root.replaceChildren(...frag);
 }
 
