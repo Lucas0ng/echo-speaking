@@ -59,12 +59,14 @@ async function aiAudio(blob, prompt) {
   const fd = new FormData(); fd.append('audio', blob, 'rec' + extOf(blob)); fd.append('prompt', prompt); fd.append('want_json', '1');
   return (await api('/api/ai/audio', { method: 'POST', body: fd })).json;
 }
-/* arch = { kind, line, meta } archives the recording on the server (audio + transcript + fluency metrics). */
+/* arch = { kind, line, meta } archives the recording on the server (audio + transcript + fluency metrics).
+   arch = { cloud: true } asks for cloud recognition without archiving (no word timings are then available). */
 async function sttFull(blob, ref = '', arch = null) {
   const fd = new FormData(); fd.append('audio', blob, 'rec' + extOf(blob)); fd.append('ref', ref);
-  if (arch) { fd.append('kind', arch.kind); fd.append('line', arch.line || 'daily'); fd.append('meta', JSON.stringify(arch.meta || {})); }
+  if (arch?.cloud) fd.append('cloud', '1');
+  if (arch?.kind) { fd.append('kind', arch.kind); fd.append('line', arch.line || 'daily'); fd.append('meta', JSON.stringify(arch.meta || {})); }
   const j = await api('/api/stt', { method: 'POST', body: fd });
-  if (arch) RECS.dirty = true;
+  if (arch?.kind) RECS.dirty = true;
   return j;
 }
 async function stt(blob, ref = '', arch = null) { return (await sttFull(blob, ref, arch)).text; }
@@ -2628,6 +2630,25 @@ async function renderSettings() {
     h('p', { class: 'hint', text: 'IELTSCast 已生成 ' + STATUS.ielts_transcribed + ' / ' + STATUS.lessons + ' 集逐句字幕；队列里还有 ' + STATUS.queue + ' 个。' + (STATUS.whisper?.error ? ' 最近的错误：' + STATUS.whisper.error : '') }),
     h('div', { class: 'progress' }, h('i', { style: 'width:' + pct + '%' })),
     h('div', { class: 'row' }, h('button', { class: 'btn', onclick: async () => { const r = await post('/api/transcribe_all', {}); alertBox('已加入 ' + r.queued + ' 个文件，后台慢慢转写。'); renderSettings(); } }, '把全部课程音频加入转写队列'))));
+  // speech recognition engine
+  const sttMsg = h('p', { class: 'hint' });
+  const dsKey = !!CFG.providers.deepseek?.has_key;
+  const sttSwitch = seg(['local', 'deepseek'], CFG.stt_engine === 'deepseek' ? 'deepseek' : 'local', async v => {
+    try {
+      CFG = await post('/api/config', { stt_engine: v });
+      STATUS = await api('/api/status');
+      renderSettings();
+    } catch (e) { sttMsg.textContent = e.message; }
+  }, v => (v === 'local' ? '本机 Whisper' : 'DeepSeek（更快）'));
+  if (!dsKey) {
+    const dsBtn = $$('button', sttSwitch)[1];
+    if (dsBtn) { dsBtn.disabled = true; dsBtn.style.opacity = '.45'; dsBtn.style.cursor = 'not-allowed'; }
+    sttMsg.textContent = '还没有 DeepSeek 的 key，先在上面「DeepSeek」里填好并保存，才能用云端识别。';
+  }
+  frag.push(h('div', { class: 'prov' }, h('h3', { text: '语音识别' }),
+    h('label', { class: 'row' }, sttSwitch),
+    h('p', { class: 'hint', text: 'DeepSeek 每句约 1–2 秒，能保留你说错的地方，用的是上面 DeepSeek 的 key，每小时录音约 0.4 元。开启后跟读以外的短句录音会上传到 DeepSeek；限时独白、基准录音和跟读仍在本机识别。' }),
+    sttMsg));
   // voice
   const tts = CFG.providers.tts || {};
   const tv = await api('/api/tts/voices').catch(() => null);

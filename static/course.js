@@ -774,7 +774,8 @@ function rbHelpView(unit) {
     box.append(h('p', { class: 'hint', text: '可以这么说（看完自己说出来）：' }), ...rbEn(u.help.better),
       h('p', { class: 'hint', text: [u.help.zh, u.help.note].filter(Boolean).join(' · ') }));
   }
-  const input = h('input', { type: 'text', class: 'rb-help-input', placeholder: '卡住了？在这里写想说的话，中文或半句英文都行', value: u.helpDraft || '' });
+  const cloudMic = STATUS.stt?.engine === 'deepseek';
+  const input = h('input', { type: 'text', class: 'rb-help-input', placeholder: cloudMic ? '卡住了？写下或用中文说出想说的话' : '卡住了？在这里写想说的话，中文或半句英文都行', value: u.helpDraft || '' });
   input.oninput = () => { u.helpDraft = input.value; };
   const ask = async () => {
     const want = (u.helpDraft || '').trim();
@@ -796,7 +797,26 @@ function rbHelpView(unit) {
     RB.busy = false; RB.busyLabel = ''; renderCourse();
   };
   input.onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) ask(); };
-  box.append(h('div', { class: 'row' }, input, h('button', { class: 'btn', onclick: ask }, '怎么说')));
+  /* Local Whisper is English-only, so Chinese speech is recognized by DeepSeek and then fed through the same ask(). */
+  const sayZh = async blob => {
+    if (RB.busy) return;
+    RB.busy = true; RB.busyLabel = '识别中…'; renderCourse();
+    try {
+      const j = await sttFull(blob, '', { cloud: true });
+      const said = String(j?.text || '').trim();
+      RB.busy = false; RB.busyLabel = '';
+      if (!said) { alertBox('没听到说话，再说一次。'); renderCourse(); return; }
+      u.helpDraft = said;
+      renderCourse();
+      await ask();
+    } catch (e) {
+      RB.busy = false; RB.busyLabel = '';
+      throw e;
+    }
+  };
+  box.append(h('div', { class: 'row' }, input,
+    cloudMic ? micButton('rb-help', rbGuard(sayZh), ['用中文说', '停']) : null,
+    h('button', { class: 'btn', onclick: ask }, '怎么说')));
   return box;
 }
 

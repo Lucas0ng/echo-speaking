@@ -45,6 +45,7 @@ DEFAULT_CFG = {
     "media_dir": "~/Downloads/回声课程音频",
     "whisper_model": "mlx-community/whisper-large-v3-turbo",
     "text_provider": "deepseek",
+    "stt_engine": "local",
     "providers": {
         "deepseek": {"label": "DeepSeek", "base_url": "https://api.deepseek.com", "api_key": "", "model": "deepseek-flash"},
         "glm": {"label": "GLM（智谱）", "base_url": "https://open.bigmodel.cn/api/paas/v4", "api_key": "", "model": ""},
@@ -247,6 +248,37 @@ def wav_bytes(samples: np.ndarray) -> bytes:
         w.setframerate(SR)
         w.writeframes((np.clip(samples, -1, 1) * 32767).astype(np.int16).tobytes())
     return buf.getvalue()
+
+
+# ---------------------------------------------------------------- cloud ASR
+DEEPSEEK_ASR_URL = "https://api.deepseek.com/v1/tools/asr"
+
+
+async def cloud_asr(samples: np.ndarray) -> str:
+    """DeepSeek speech recognition: 16 kHz mono float32 samples in, plain text out.
+
+    It is faster than local Whisper and keeps the learner's grammar mistakes, but returns no word timings,
+    so callers only use it where timings are not needed. Any failure raises; the caller falls back to Whisper.
+    """
+    key = str((CFG["providers"].get("deepseek") or {}).get("api_key") or "").strip()
+    if not key:
+        raise RuntimeError("没有 DeepSeek key")
+    async with httpx.AsyncClient(timeout=httpx.Timeout(20, connect=8), trust_env=False) as c:
+        r = await c.post(
+            DEEPSEEK_ASR_URL,
+            headers={"Authorization": f"Bearer {key}"},
+            files={"file": ("audio.wav", wav_bytes(samples), "audio/wav")},
+        )
+    if r.status_code != 200:
+        raise RuntimeError(f"DeepSeek 语音识别失败 {r.status_code}：{r.text[:200]}")
+    try:
+        data = r.json()
+    except Exception as e:
+        raise RuntimeError("DeepSeek 语音识别的返回不是 JSON") from e
+    text = str(data.get("text") or "").strip() if isinstance(data, dict) else ""
+    if not text:
+        raise RuntimeError("DeepSeek 语音识别没有返回文字")
+    return text
 
 
 # ---------------------------------------------------------------- whisper
@@ -1314,11 +1346,15 @@ def api_materials_reveal():
 
 
 @app.post("/api/stt")
-async def api_stt(audio: UploadFile = File(...), ref: str = Form(""), kind: str = Form(""), line: str = Form("daily"), meta: str = Form("{}")):
+async def api_stt(audio: UploadFile = File(...), ref: str = Form(""), kind: str = Form(""), line: str = Form("daily"), meta: str = Form("{}"), cloud: str = Form("")):
     """Speech to text. With `kind`, the recording is archived with word timestamps and fluency metrics.
 
     `ref` (the sentence the learner was meant to say) is deliberately NOT given to Whisper as a prompt:
     with it, half-said words like "car" / "lang" come back as "career" / "language" and score 100%.
+
+    DeepSeek ASR is used only where word timings are not needed: short course lines, chat, review and chunk
+    recordings, or an explicit cloud=1. The 60-second course monologue (seg=fast), talk, baseline, r432, solo,
+    shadow and pron always stay on local Whisper. Any cloud failure silently falls back to Whisper.
     """
     mark_active()
     raw = await audio.read()
@@ -1330,10 +1366,45 @@ async def api_stt(audio: UploadFile = File(...), ref: str = Form(""), kind: str 
         return {"text": "", "words": []}
     if kind and kind not in KINDS:
         raise HTTPException(400, "未知的录音类型")
+    try:
+        parsed = json.loads(meta) if len(meta) < 4000 else {}
+    except Exception:
+        parsed = {}
+    m = parsed if isinstance(parsed, dict) else {}
+
+    ds_key = str((CFG["providers"].get("deepseek") or {}).get("api_key") or "").strip()
+    secs = len(samples) / SR
+    # Kinds that need word timings (talk, baseline, r432, solo, shadow, pron) and the course fast monologue
+    # always stay local. cloud=1 lets a clip without a kind (the Chinese help box) use the cloud too.
+    timed_kinds = {"talk", "baseline", "r432", "solo", "shadow", "pron"}
+    use_cloud = (
+        CFG.get("stt_engine") == "deepseek"
+        and bool(ds_key)
+        and secs < 115
+        and (cloud == "1" or kind in {"course", "chat", "review", "chunk"})
+        and kind not in timed_kinds
+        and not (kind == "course" and m.get("seg") == "fast")
+    )
+
+    if use_cloud:
+        try:
+            text = await cloud_asr(samples)
+        except Exception:
+            text = None
+        if text is not None:
+            if looped(text):
+                return {"text": "", "words": []}
+            onset = speech_onset(samples)
+            if not kind:
+                return {"text": text, "words": [], "onset": onset, "engine": "deepseek"}
+            rec = save_recording(raw, audio.filename, samples, {"segments": []}, text, kind,
+                                 "academic" if line == "academic" else "daily", m)
+            return {"text": text, "words": rec["words"], "id": rec["id"], "metrics": rec["metrics"], "stuck": rec["stuck"],
+                    "duration": rec["duration"], "onset": onset, "engine": "deepseek"}
+
     prompt = FILLER_PROMPT if kind in CURVE_KINDS else None
     # A clip of a word or one sentence gets a token budget in proportion to its length: without it, a quiet or noisy clip
     # makes Whisper loop to the full 448 tokens (and retry at higher temperatures), which takes a minute and returns junk.
-    secs = len(samples) / SR
     cap = int(secs * 6) + 12 if secs < 20 else None
     res = await run_blocking(lambda: whisper_run(samples, words=True, prompt=prompt, max_tokens=cap))
     text = " ".join(s["text"].strip() for s in res.get("segments", [])).strip()
@@ -1341,13 +1412,9 @@ async def api_stt(audio: UploadFile = File(...), ref: str = Form(""), kind: str 
         return {"text": "", "words": []}
     onset = speech_onset(samples)
     if not kind:
-        return {"text": text, "words": word_list(res), "onset": onset}
-    try:
-        m = json.loads(meta) if len(meta) < 4000 else {}
-    except Exception:
-        m = {}
-    rec = save_recording(raw, audio.filename, samples, res, text, kind, "academic" if line == "academic" else "daily", m if isinstance(m, dict) else {})
-    return {"text": text, "words": rec["words"], "id": rec["id"], "metrics": rec["metrics"], "stuck": rec["stuck"], "duration": rec["duration"], "onset": onset}
+        return {"text": text, "words": word_list(res), "onset": onset, "engine": "local"}
+    rec = save_recording(raw, audio.filename, samples, res, text, kind, "academic" if line == "academic" else "daily", m)
+    return {"text": text, "words": rec["words"], "id": rec["id"], "metrics": rec["metrics"], "stuck": rec["stuck"], "duration": rec["duration"], "onset": onset, "engine": "local"}
 
 
 @app.post("/api/pitch")
@@ -1567,6 +1634,8 @@ async def api_config_save(req: Request):
     body = await req.json()
     if "text_provider" in body:
         CFG["text_provider"] = body["text_provider"]
+    if "stt_engine" in body:
+        CFG["stt_engine"] = body["stt_engine"] if body["stt_engine"] in ("local", "deepseek") else "local"
     for name, pv in (body.get("providers") or {}).items():
         dst = CFG["providers"].setdefault(name, {})
         for k in ("base_url", "model", "voice"):
@@ -1645,6 +1714,7 @@ def api_status():
     done = sum(1 for l in LESSONS if tpath(l["f"]).exists())
     tts = CFG["providers"].get("tts") or {}
     tts_key = str(tts.get("api_key") or "").strip() or str((CFG["providers"].get("omni") or {}).get("api_key") or "").strip()
+    ds_key = str((CFG["providers"].get("deepseek") or {}).get("api_key") or "").strip()
     providers = {k: bool(v.get("api_key")) and bool(v.get("model")) for k, v in CFG["providers"].items()}
     providers["tts"] = bool(tts_key) and bool(tts.get("model"))
     return {
@@ -1656,6 +1726,7 @@ def api_status():
         "whisper": WHISPER,
         "providers": providers,
         "tts": {"on": bool(tts.get("on")) and bool(tts_key), "voice": str(tts.get("voice") or TTS_DEFAULT_VOICE)},
+        "stt": {"engine": "deepseek" if CFG.get("stt_engine") == "deepseek" and ds_key else "local"},
         "text_provider": CFG.get("text_provider"),
         "lesson_error": LESSON_ERR,
     }
