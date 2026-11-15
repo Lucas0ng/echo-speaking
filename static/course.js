@@ -339,12 +339,12 @@ const RB_ANA = {};
 function rbAnaBtn(sentence) {
   const a = RB_ANA[sentence];
   return h('button', { class: 'btn ghost', disabled: a?.busy || null, onclick: async () => {
-    if (a && !a.busy) { a.open = !a.open; renderCourse(); return; }
+    if (a && !a.busy && !a.error) { a.open = !a.open; renderCourse(); return; } // a failed analysis is asked again, not just hidden
     const st = RB_ANA[sentence] = { busy: true, open: true };
     RB.busy = true; RB.busyLabel = '拆句中…'; renderCourse();
     try { st.item = (await analyzeSentences([sentence]))[0]; } catch (e) { st.error = e?.message || String(e); }
     st.busy = false; RB.busy = false; RB.busyLabel = ''; renderCourse();
-  } }, a?.busy ? '拆句中…' : a?.open ? '收起拆句' : '拆句');
+  } }, a?.busy ? '拆句中…' : a?.error ? '重新拆句' : a?.open ? '收起拆句' : '拆句');
 }
 function rbAnaView(sentence) {
   const a = RB_ANA[sentence];

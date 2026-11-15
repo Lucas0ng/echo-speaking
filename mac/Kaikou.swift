@@ -1,5 +1,6 @@
 // 回声 · Mac 外壳 App
 // 启动时在后台运行项目里的 `.venv/bin/python app.py`（如果它还没在跑），用 WKWebView 显示界面，退出时关掉自己启动的服务。
+// 运行中每 4 秒看一次服务还在不在；连续两次没响应就在后台重新启动，页面不动（2 分钟内停了 3 次才报错）。
 // 项目目录在构建时写进 Info.plist 的 KaikouProjectDir。构建：mac/build.sh
 import Cocoa
 import WebKit
@@ -29,6 +30,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
   var web: WKWebView!
   var server: Process?
   var quitting = false
+  var launching = false     // a server process was started and has not answered yet
+  var misses = 0            // watchdog pings in a row that got no answer
+  var restarts: [Date] = [] // quiet restarts, to stop a crash loop
+  var gaveUp = false
 
   let projectDir: URL = {
     let p = Bundle.main.object(forInfoDictionaryKey: "KaikouProjectDir") as? String ?? "~/projects/kaikou"
@@ -67,6 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
 
     showMessage("正在启动…", detail: "第一次打开要加载本机 Whisper，可能要十几秒。")
     startServerIfNeeded()
+    startWatchdog()
   }
 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -114,6 +120,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
   }
 
   func startServerIfNeeded() {
+    gaveUp = false
+    restarts = []
     ping { up in
       DispatchQueue.main.async {
         if up { self.loadApp(); return }  // started from start.command or another copy: just use it
@@ -122,7 +130,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
     }
   }
 
-  func launchServer() {
+  /// The server can stop while the window is open (it was started elsewhere and closed, or it crashed).
+  /// Pages then fail with "后台服务刚才断了"; this brings it back without reloading the page.
+  func startWatchdog() {
+    Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { [weak self] _ in self?.checkServer() }
+  }
+
+  func checkServer() {
+    guard !quitting, !launching, !gaveUp else { return }
+    // our own process still running means it is busy (local Whisper), not gone
+    if let p = server, p.isRunning { misses = 0; return }
+    ping { up in
+      DispatchQueue.main.async {
+        guard !self.quitting, !self.launching, !self.gaveUp else { return }
+        if up { self.misses = 0; return }
+        self.misses += 1
+        guard self.misses >= 2 else { return }
+        self.misses = 0
+        self.restarts = self.restarts.filter { $0.timeIntervalSinceNow > -120 } + [Date()]
+        if self.restarts.count > 3 {
+          self.gaveUp = true
+          self.showMessage("后台服务反复停止", detail: "2 分钟内停了 3 次。详细信息在项目文件夹的 server.log 里。按 ⌘R 重试。", error: true)
+          return
+        }
+        self.appLog("server not answering, restarting it")
+        self.launchServer(quiet: true)
+      }
+    }
+  }
+
+  /// quiet: restart behind an open page, which keeps showing; the page is only replaced if the start fails.
+  func launchServer(quiet: Bool = false) {
     let py = projectDir.appendingPathComponent(".venv/bin/python")
     guard FileManager.default.isExecutableFile(atPath: py.path) else {
       showMessage("找不到项目", detail: "没有找到 \(py.path)。项目文件夹换了位置的话，重新运行 mac/build.sh 打包。", error: true)
@@ -141,9 +179,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
     p.standardError = log ?? FileHandle.nullDevice
     p.terminationHandler = { proc in
       DispatchQueue.main.async {
-        guard !self.quitting else { return }
+        guard !self.quitting, self.server === proc else { return }
         self.server = nil
-        self.showMessage("后台服务停了", detail: "退出代码 \(proc.terminationStatus)。详细信息在项目文件夹的 server.log 里。按 ⌘R 重试。", error: true)
+        self.appLog("server exited with code \(proc.terminationStatus)")
+        // while the app page is open the watchdog restarts it; a server that dies while starting is reported
+        if self.launching {
+          self.launching = false
+          self.showMessage("后台服务停了", detail: "退出代码 \(proc.terminationStatus)。详细信息在项目文件夹的 server.log 里。按 ⌘R 重试。", error: true)
+        }
       }
     }
     do { try p.run() } catch {
@@ -151,15 +194,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
       return
     }
     server = p
-    waitForServer(until: Date().addingTimeInterval(90))
+    launching = true
+    waitForServer(until: Date().addingTimeInterval(90), quiet: quiet)
   }
 
-  func waitForServer(until deadline: Date) {
+  func waitForServer(until deadline: Date, quiet: Bool) {
     ping { up in
       DispatchQueue.main.async {
-        if up { self.loadApp() }
-        else if Date() > deadline { self.showMessage("启动超时", detail: "90 秒内服务没有响应。详细信息在 server.log 里。按 ⌘R 重试。", error: true) }
-        else if self.server != nil { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.waitForServer(until: deadline) } }
+        guard self.launching else { return }  // the process exited; its handler already reported it
+        if up {
+          self.launching = false
+          if !quiet || self.web.url?.host != "127.0.0.1" { self.loadApp() }
+        } else if Date() > deadline {
+          self.launching = false
+          self.showMessage("启动超时", detail: "90 秒内服务没有响应。详细信息在 server.log 里。按 ⌘R 重试。", error: true)
+        } else { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.waitForServer(until: deadline, quiet: quiet) } }
       }
     }
   }

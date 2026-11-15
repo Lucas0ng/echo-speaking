@@ -41,7 +41,13 @@ const esc = s => String(s ?? '');
 /* ================= api ================= */
 async function api(path, opts = {}) {
   let r;
-  try { r = await fetch(path, opts); } catch { throw new Error('连不上本地服务。确认「回声」的终端窗口还开着。'); }
+  try { r = await fetch(path, opts); }
+  catch {
+    // the Mac app (Kaikou.swift) restarts a stopped server by itself; start.command runs it in a terminal window
+    throw new Error(window.webkit?.messageHandlers?.kaikou
+      ? '后台服务刚才断了，回声正在自动重启它。等十几秒再点一次。'
+      : '连不上本地服务。确认「回声」的终端窗口还开着。');
+  }
   let j = null; try { j = await r.json(); } catch {}
   if (!r.ok) throw new Error(j?.error || ('请求失败（' + r.status + '）'));
   return j;
