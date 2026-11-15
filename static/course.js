@@ -575,7 +575,9 @@ function rbUsePrompt(unit) {
     'You are playing a role in a short spoken role-play with an adult Chinese learner of English (speaking level about A2).',
     'Your role: ' + (t.role || ''),
     "The learner's goal: " + (t.goal_zh || ''),
-    'Target pattern the learner is practising today: "' + (p.frame || '') + '"',
+    ...(unit?.kind === 'mix'
+      ? ['Target patterns the learner is reviewing today (they should use at least ' + rbNeed(unit) + ' different ones): ' + rbTargets(unit).map(f => '"' + f + '"').join(', ')]
+      : ['Target pattern the learner is practising today: "' + (p.frame || '') + '"']),
     'Example sentences the learner has already drilled (repeating one of these does NOT count as new):',
     examples.join('\n'),
     '',
@@ -599,11 +601,18 @@ function rbUsePrompt(unit) {
    (it returned false for "I'd like a large latte, please."). The fixed parts of the frame must appear in order, and the
    turn must not be a word-for-word repeat of a drilled sentence. The model's own "used: true" still counts, for variants
    such as "I would like". */
-const rbNormEn = s => String(s || '').toLowerCase().replace(/[\u2018\u2019]/g, "'").replace(/[^a-z0-9' ]+/g, ' ').replace(/\s+/g, ' ').trim();
-function rbFrameUsed(said, unit) {
-  const p = unit?.pattern || {};
-  const text = ' ' + rbNormEn(said) + ' ';
-  const parts = String(p.frame || '').split('...').map(rbNormEn).filter(x => x && x !== 'please');
+/* Contractions are spelled out on both sides, so "Where is the bank" counts for "Where's the ...?". */
+const rbNormEn = s => String(s || '').toLowerCase().replace(/[\u2018\u2019]/g, "'")
+  .replace(/\bcan't\b/g, 'can not').replace(/\bwon't\b/g, 'will not').replace(/n't\b/g, ' not')
+  .replace(/'m\b/g, ' am').replace(/'re\b/g, ' are').replace(/'ll\b/g, ' will').replace(/'ve\b/g, ' have').replace(/'d\b/g, ' would')
+  .replace(/\b(it|that|what|where|there|here|who|how|he|she)'s\b/g, '$1 is')
+  .replace(/[^a-z0-9' ]+/g, ' ').replace(/\s+/g, ' ').trim();
+/* A mix lesson (kind "mix") has no new pattern: pattern.frames lists the block's patterns and the learner has to use
+   rbNeed() different ones in the role-play. A normal unit has one pattern.frame and needs it twice. */
+const rbTargets = unit => (Array.isArray(unit?.pattern?.frames) && unit.pattern.frames.length ? unit.pattern.frames : [unit?.pattern?.frame || '']).filter(Boolean);
+const rbNeed = unit => (unit?.kind === 'mix' ? 3 : 2);
+function rbFrameHit(text, frame) {
+  const parts = String(frame || '').split('...').map(rbNormEn).filter(x => x && x !== 'please');
   if (!parts.length) return false;
   let at = 0;
   for (const part of parts) {
@@ -611,9 +620,17 @@ function rbFrameUsed(said, unit) {
     if (i < 0) return false;
     at = i + part.length + 1;
   }
-  const drilled = [...(p.sentences || []), ...(p.swaps || [])].map(x => rbNormEn(x.en));
-  return !drilled.includes(rbNormEn(said));
+  return true;
 }
+/* The target patterns this turn used (empty when it only repeated a drilled sentence word for word). */
+function rbFramesUsed(said, unit) {
+  const p = unit?.pattern || {};
+  const drilled = [...(p.sentences || []), ...(p.swaps || [])].map(x => rbNormEn(x.en));
+  if (drilled.includes(rbNormEn(said))) return [];
+  const text = ' ' + rbNormEn(said) + ' ';
+  return rbTargets(unit).filter(f => rbFrameHit(text, f));
+}
+const rbFrameUsed = (said, unit) => rbFramesUsed(said, unit).length > 0;
 
 function rbUseMessages(unit) {
   return [
@@ -665,7 +682,7 @@ function rbUsePanel() {
       h('p', { text: t.scene_zh || '' }),
       h('p', { class: 'hint', text: '目标：' + (t.goal_zh || '') })),
     h('div', { class: 'rb-step-head' },
-      h('span', { class: 'tag ' + (u.n >= 2 ? 'good' : 'lamp'), text: '用上今天的句型：' + u.n + ' / 2' }),
+      h('span', { class: 'tag ' + (u.n >= rbNeed(unit) ? 'good' : 'lamp'), text: (unit?.kind === 'mix' ? '用上本块的不同句型：' : '用上今天的句型：') + u.n + ' / ' + rbNeed(unit) }),
       u.done ? h('span', { class: 'tag good', text: '目标达成' }) : null),
     rbDialogView(),
   ];
@@ -682,11 +699,11 @@ function rbUsePanel() {
   } else {
     kids.push(h('div', { class: 'row' },
       micButton('rb-use', rbGuard(blob => rbUseSay(blob, unit))),
-      u.n >= 2 ? h('button', { class: 'btn primary', onclick: () => rbAdvanceSeg() }, '进下一段') : null));
+      u.n >= rbNeed(unit) ? h('button', { class: 'btn primary', onclick: () => rbAdvanceSeg() }, '进下一段') : null));
   }
   if (!(u.slip && !u.slip.resolved)) kids.push(rbHelpView(unit));
-  if (u.n < 2 && RB.timeUp) {
-    kids.push(h('p', { class: 'hint warn', text: '时间到，但还要再用上今天的句型（' + u.n + ' / 2）。' }));
+  if (u.n < rbNeed(unit) && RB.timeUp) {
+    kids.push(h('p', { class: 'hint warn', text: '时间到，但还要再用上' + (unit?.kind === 'mix' ? '本块的不同句型' : '今天的句型') + '（' + u.n + ' / ' + rbNeed(unit) + '）。' }));
   }
   if (u.error) kids.push(h('p', { class: 'err', text: u.error }));
   return h('section', { class: 'panel rb-panel' }, ...kids);
@@ -731,7 +748,11 @@ async function rbUseSay(blob, unit) {
   }
   const reply = String(out.reply).trim();
   u.history.push({ role: 'assistant', text: reply });
-  if (out.used === true || rbFrameUsed(said, unit)) u.n += 1;
+  if (unit?.kind === 'mix') {
+    // distinct patterns, checked by the program only: the model cannot say which pattern it counted
+    u.frames = [...new Set([...(u.frames || []), ...rbFramesUsed(said, unit)])];
+    u.n = u.frames.length;
+  } else if (out.used === true || rbFrameUsed(said, unit)) u.n += 1;
   if (out.done === true) u.done = true;
   if (out.slip && out.slip.fix) {
     u.slip = {
@@ -785,7 +806,7 @@ function rbHelpView(unit) {
       const lastAi = [...u.history].reverse().find(m => m.role === 'assistant');
       const j = await aiText(LEARNER + '\n\nIn a role-play (' + (unit?.task?.role || '') + '), the partner said: "' + (lastAi?.text || '') + '"\n'
         + 'The learner is stuck and wrote what they want to say (Chinese, or broken English):\n"' + want + '"\n'
-        + 'Today\'s target pattern is "' + (unit?.pattern?.frame || '') + '". Use it if it fits what they mean; do not force it.\n'
+        + 'Today\'s target pattern' + (unit?.kind === 'mix' ? 's are ' + rbTargets(unit).map(f => '"' + f + '"').join(', ') : ' is "' + (unit?.pattern?.frame || '') + '"') + '. Use one if it fits what they mean; do not force it.\n'
         + 'Give the simple, natural spoken English for what they meant, short enough to say right away.\n'
         + 'JSON: {"better": "...", "zh": "这句英文的中文意思", "note_zh": "中文一句：关键的词或说法"}', { think: false });
       if (!j?.better) throw new Error('AI 没给出说法，再试一次。');

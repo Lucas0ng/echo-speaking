@@ -10,7 +10,7 @@
   "total": 3000,
   "milestone": 30,
   "stages": [
-    { "id": 1, "name": "发声", "from": 2997, "to": 2880, "can": "A1–A2 的句子不假思索" }
+    { "id": 1, "name": "发声", "from": 3000, "to": 2880, "can": "A1–A2 的句子不假思索" }
   ],
   "units": [
     {
